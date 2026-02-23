@@ -1,0 +1,2 @@
+# blog
+Binary logging.
