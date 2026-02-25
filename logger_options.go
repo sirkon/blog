@@ -4,18 +4,19 @@ import (
 	"fmt"
 )
 
-// OptionHandler is implemented by functional options.
-type OptionHandler interface {
-	handle(l *Logger) error
+// OptionApplier is implemented by implementations controlling their aspection of [Logger] setup.
+type OptionApplier interface {
+	fmt.Stringer
+	apply(l *Logger) error
 }
 
 // OptionLogLocations logger will show locations of logging.
-func OptionLogLocations() OptionHandler {
+func OptionLogLocations() OptionApplier {
 	return &optionLogLocations{}
 }
 
 // OptionLogFromLevel logger will only log events with level starting from the given l.
-func OptionLogFromLevel(l LoggingLevel) OptionHandler {
+func OptionLogFromLevel(l LoggingLevel) OptionApplier {
 	return &optionLogFrom{
 		l: l,
 	}
@@ -23,7 +24,11 @@ func OptionLogFromLevel(l LoggingLevel) OptionHandler {
 
 type optionLogLocations struct{}
 
-func (e *optionLogLocations) handle(l *Logger) error {
+func (e *optionLogLocations) String() string {
+	return "show locations"
+}
+
+func (e *optionLogLocations) apply(l *Logger) error {
 	l.logLocations = true
 	return nil
 }
@@ -32,7 +37,11 @@ type optionLogFrom struct {
 	l LoggingLevel
 }
 
-func (e *optionLogFrom) handle(l *Logger) error {
+func (e *optionLogFrom) String() string {
+	return "log from"
+}
+
+func (e *optionLogFrom) apply(l *Logger) error {
 	switch e.l {
 	case LoggingLevelTrace:
 	case LoggingLevelDebug:
@@ -40,7 +49,7 @@ func (e *optionLogFrom) handle(l *Logger) error {
 	case LoggingLevelWarning:
 	case LoggingLevelError:
 	default:
-		return fmt.Errorf("invalid-logging-level[%d]", e.l)
+		return fmt.Errorf("logging-level-uknown[%d]", e.l)
 	}
 
 	l.logFrom = e.l

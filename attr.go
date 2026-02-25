@@ -2,437 +2,195 @@ package blog
 
 import (
 	"fmt"
-	"math"
 	"time"
-	"unicode"
-	"unicode/utf8"
-	"unsafe"
+
+	"github.com/sirkon/blog/internal/attribute"
 )
 
-// Attr a key-value pair for logging context.
-type Attr struct {
-	Key   string
-	Value Value
-	kind  valueKind
-}
+// Attr is a type alias for [attribute.Attr]
+//
+//	type Attr struct {
+//	    Key   string
+//	    Value Value
+//	}
+type Attr = attribute.Attr
 
 // Bool returns an [Attr] for boolean value.
 func Bool(key string, value bool) Attr {
-	var v uint64
-	if value {
-		v = 1
-	}
-	return Attr{
-		Key: key,
-		Value: Value{
-			num: v,
-		},
-		kind: valueKindBool,
-	}
+	return attribute.Bool(key, value)
 }
 
-// Time returns an [Attr] for [time.Time].
+// Time returns an [Attr] for time.Time.
 func Time(key string, value time.Time) Attr {
-	return Attr{
-		Key: key,
-		Value: Value{
-			num: uint64(value.UnixNano()),
-		},
-		kind: valueKindTime,
-	}
+	return attribute.Time(key, value)
 }
 
-// Duration returns an [Attr] for [time.Duration].
+// Duration returns an [Attr] for time.Duration.
 func Duration(key string, value time.Duration) Attr {
-	return Attr{
-		Key: key,
-		Value: Value{
-			num: uint64(value),
-		},
-		kind: valueKindDuration,
-	}
+	return attribute.Duration(key, value)
 }
 
 // Int returns an [Attr] for int value.
 func Int(key string, value int) Attr {
-	return Attr{
-		Key: key,
-		Value: Value{
-			num: uint64(value),
-		},
-		kind: valueKindInt,
-	}
+	return attribute.Int(key, value)
 }
 
 // Int8 returns an [Attr] for int8 value.
 func Int8(key string, value int8) Attr {
-	return Attr{
-		Key: key,
-		Value: Value{
-			num: uint64(value),
-		},
-		kind: valueKindInt8,
-	}
+	return attribute.Int8(key, value)
 }
 
 // Int16 returns an [Attr] for int16 value.
 func Int16(key string, value int16) Attr {
-	return Attr{
-		Key: key,
-		Value: Value{
-			num: uint64(value),
-		},
-		kind: valueKindInt16,
-	}
+	return attribute.Int16(key, value)
 }
 
 // Int32 returns an [Attr] for int32 value.
 func Int32(key string, value int32) Attr {
-	return Attr{
-		Key: key,
-		Value: Value{
-			num: uint64(value),
-		},
-		kind: valueKindInt32,
-	}
+	return attribute.Int32(key, value)
 }
 
 // Int64 returns an [Attr] for int64 value.
 func Int64(key string, value int64) Attr {
-	return Attr{
-		Key: key,
-		Value: Value{
-			num: uint64(value),
-		},
-		kind: valueKindInt64,
-	}
+	return attribute.Int64(key, value)
 }
 
 // Uint returns an [Attr] for uint value.
 func Uint(key string, value uint) Attr {
-	return Attr{
-		Key: key,
-		Value: Value{
-			num: uint64(value),
-		},
-		kind: valueKindUint,
-	}
+	return attribute.Uint(key, value)
 }
 
 // Uint8 returns an [Attr] for uint8 value.
 func Uint8(key string, value uint8) Attr {
-	return Attr{
-		Key: key,
-		Value: Value{
-			num: uint64(value),
-		},
-		kind: valueKindUint8,
-	}
+	return attribute.Uint8(key, value)
 }
 
 // Uint16 returns an [Attr] for uint16 value.
 func Uint16(key string, value uint16) Attr {
-	return Attr{
-		Key: key,
-		Value: Value{
-			num: uint64(value),
-		},
-		kind: valueKindUint16,
-	}
+	return attribute.Uint16(key, value)
 }
 
 // Uint32 returns an [Attr] for uint32 value.
 func Uint32(key string, value uint32) Attr {
-	return Attr{
-		Key: key,
-		Value: Value{
-			num: uint64(value),
-		},
-		kind: valueKindUint32,
-	}
+	return attribute.Uint32(key, value)
 }
 
 // Uint64 returns an [Attr] for uint64 value.
 func Uint64(key string, value uint64) Attr {
-	return Attr{
-		Key: key,
-		Value: Value{
-			num: value,
-		},
-		kind: valueKindUint64,
-	}
+	return attribute.Uint64(key, value)
 }
 
 // Flt32 returns an [Attr] for float32 value.
 func Flt32(key string, value float32) Attr {
-	return Attr{
-		Key: key,
-		Value: Value{
-			num: uint64(math.Float32bits(value)),
-		},
-		kind: valueKindFloat32,
-	}
+	return attribute.Flt32(key, value)
 }
 
 // Flt64 returns an [Attr] for float64 value.
 func Flt64(key string, value float64) Attr {
-	return Attr{
-		Key: key,
-		Value: Value{
-			num: math.Float64bits(value),
-		},
-		kind: valueKindFloat64,
-	}
+	return attribute.Flt64(key, value)
 }
 
 // Str returns an [Attr] for string value.
 func Str(key string, value string) Attr {
-	return Attr{
-		Key: key,
-		Value: Value{
-			num: uint64(len(value)),
-			srl: (*stringPtr)(unsafe.Pointer(unsafe.StringData(value))),
-		},
-		kind: valueKindString,
-	}
+	return attribute.Str(key, value)
 }
 
-// Stg returns an [Attr] for [fmt.Stringer] value packed as just a string.
+// Stg returns an [Attr] for fmt.Stringer value.
 func Stg(key string, value fmt.Stringer) Attr {
-	val := value.String()
-	strPtr := (*stringPtr)(unsafe.Pointer(unsafe.StringData(val)))
-	return Attr{
-		Key: key,
-		Value: Value{
-			num: uint64(len(val)),
-			srl: strPtr,
-		},
-		kind: valueKindString,
-	}
+	return attribute.Stg(key, value)
 }
 
 // Bytes returns an [Attr] for []byte value.
 func Bytes(key string, value []byte) Attr {
-	var kind valueKind
-	var ptr Serializer
-	if isPrintableStringWithSpaces(value) {
-		kind = valueKindString
-		ptr = (*stringPtr)(unsafe.Pointer(unsafe.SliceData(value)))
-	} else {
-		kind = valueKindBytes
-		ptr = (*bytesPtr)(unsafe.Pointer(unsafe.SliceData(value)))
-	}
-
-	return Attr{
-		Key: key,
-		Value: Value{
-			num: uint64(len(value)),
-			srl: ptr,
-		},
-		kind: kind,
-	}
+	return attribute.Bytes(key, value)
 }
 
-// Error returns an [Attr] for error value packed as just a string.
-// TODO implement dedicated [beer.Error] support.
+// Error returns an [Attr] for error value.
 func Error(key string, err error) Attr {
-	// Here is the place for [beer.Error] dispatch.
-	// It may cause an additional alloc in case there's a [beer.Error] in the chain
-	// yet it is just a generic [error] at the surface level.
-
-	// End of dispatch.
-
-	val := err.Error()
-	return Attr{
-		Key: key,
-		Value: Value{
-			num: uint64(len(val)),
-			srl: (*stringPtr)(unsafe.Pointer(unsafe.StringData(val))),
-		},
-		kind: valueKindErrorRaw,
-	}
+	return attribute.Error(key, err)
 }
 
-// Err shortcut for Error("err", err).
+// Err returns an [Attr] for error with key "err".
 func Err(err error) Attr {
-	return Error("err", err)
+	return attribute.Err(err)
 }
 
 // Bools returns an [Attr] for []bool value.
 func Bools(key string, value []bool) Attr {
-	return Attr{
-		Key: key,
-		Value: Value{
-			num: uint64(len(value)),
-			srl: (*boolSlicePtr)(unsafe.Pointer(unsafe.SliceData(value))),
-		},
-		kind: valueKindSliceBool,
-	}
+	return attribute.Bools(key, value)
 }
 
 // Ints returns an [Attr] for []int value.
-func Ints(key string, value []int8) Attr {
-	return Attr{
-		Key: key,
-		Value: Value{
-			num: uint64(len(value)),
-			srl: (*intSlicePtr)(unsafe.Pointer(unsafe.SliceData(value))),
-		},
-		kind: valueKindSliceInt8,
-	}
+func Ints(key string, value []int) Attr {
+	return attribute.Ints(key, value)
 }
 
 // Int8s returns an [Attr] for []int8 value.
 func Int8s(key string, value []int8) Attr {
-	return Attr{
-		Key: key,
-		Value: Value{
-			num: uint64(len(value)),
-			srl: (*int8SlicePtr)(unsafe.Pointer(unsafe.SliceData(value))),
-		},
-		kind: valueKindSliceInt8,
-	}
+	return attribute.Int8s(key, value)
 }
 
 // Int16s returns an [Attr] for []int16 value.
 func Int16s(key string, value []int16) Attr {
-	return Attr{
-		Key: key,
-		Value: Value{
-			num: uint64(len(value)),
-			srl: (*int16SlicePtr)(unsafe.Pointer(unsafe.SliceData(value))),
-		},
-		kind: valueKindSliceInt16,
-	}
+	return attribute.Int16s(key, value)
 }
 
 // Int32s returns an [Attr] for []int32 value.
 func Int32s(key string, value []int32) Attr {
-	return Attr{
-		Key: key,
-		Value: Value{
-			num: uint64(len(value)),
-			srl: (*int32SlicePtr)(unsafe.Pointer(unsafe.SliceData(value))),
-		},
-		kind: valueKindSliceInt32,
-	}
+	return attribute.Int32s(key, value)
 }
 
 // Int64s returns an [Attr] for []int64 value.
 func Int64s(key string, value []int64) Attr {
-	return Attr{
-		Key: key,
-		Value: Value{
-			num: uint64(len(value)),
-			srl: (*int64SlicePtr)(unsafe.Pointer(unsafe.SliceData(value))),
-		},
-		kind: valueKindSliceInt64,
-	}
+	return attribute.Int64s(key, value)
 }
 
 // Uints returns an [Attr] for []uint value.
-func Uints(key string, value []uint8) Attr {
-	return Attr{
-		Key: key,
-		Value: Value{
-			num: uint64(len(value)),
-			srl: (*uintSlicePtr)(unsafe.Pointer(unsafe.SliceData(value))),
-		},
-		kind: valueKindSliceUint8,
-	}
+func Uints(key string, value []uint) Attr {
+	return attribute.Uints(key, value)
 }
 
 // Uint8s returns an [Attr] for []uint8 value.
 func Uint8s(key string, value []uint8) Attr {
-	return Attr{
-		Key: key,
-		Value: Value{
-			num: uint64(len(value)),
-			srl: (*uint8SlicePtr)(unsafe.Pointer(unsafe.SliceData(value))),
-		},
-		kind: valueKindSliceUint8,
-	}
+	return attribute.Uint8s(key, value)
 }
 
 // Uint16s returns an [Attr] for []uint16 value.
 func Uint16s(key string, value []uint16) Attr {
-	return Attr{
-		Key: key,
-		Value: Value{
-			num: uint64(len(value)),
-			srl: (*uint16SlicePtr)(unsafe.Pointer(unsafe.SliceData(value))),
-		},
-		kind: valueKindSliceUint16,
-	}
+	return attribute.Uint16s(key, value)
 }
 
 // Uint32s returns an [Attr] for []uint32 value.
 func Uint32s(key string, value []uint32) Attr {
-	return Attr{
-		Key: key,
-		Value: Value{
-			num: uint64(len(value)),
-			srl: (*uint32SlicePtr)(unsafe.Pointer(unsafe.SliceData(value))),
-		},
-		kind: valueKindSliceUint32,
-	}
+	return attribute.Uint32s(key, value)
 }
 
 // Uint64s returns an [Attr] for []uint64 value.
 func Uint64s(key string, value []uint64) Attr {
-	return Attr{
-		Key: key,
-		Value: Value{
-			num: uint64(len(value)),
-			srl: (*uint64SlicePtr)(unsafe.Pointer(unsafe.SliceData(value))),
-		},
-		kind: valueKindSliceUint64,
-	}
+	return attribute.Uint64s(key, value)
 }
 
 // Flt32s returns an [Attr] for []float32 value.
 func Flt32s(key string, value []float32) Attr {
-	return Attr{
-		Key: key,
-		Value: Value{
-			num: uint64(len(value)),
-			srl: (*float32SlicePtr)(unsafe.Pointer(unsafe.SliceData(value))),
-		},
-		kind: valueKindSliceFloat32,
-	}
+	return attribute.Flt32s(key, value)
 }
 
 // Flt64s returns an [Attr] for []float64 value.
 func Flt64s(key string, value []float64) Attr {
-	return Attr{
-		Key: key,
-		Value: Value{
-			num: uint64(len(value)),
-			srl: (*float64SlicePtr)(unsafe.Pointer(unsafe.SliceData(value))),
-		},
-		kind: valueKindSliceFloat64,
-	}
+	return attribute.Flt64s(key, value)
 }
 
 // Strs returns an [Attr] for []string value.
 func Strs(key string, value []string) Attr {
-	return Attr{
-		Key: key,
-		Value: Value{
-			num: uint64(len(value)),
-			srl: (*stringSlicePtr)(unsafe.Pointer(unsafe.SliceData(value))),
-		},
-		kind: valueKindSliceString,
-	}
+	return attribute.Strs(key, value)
 }
 
-func isPrintableStringWithSpaces(b []byte) bool {
-	for len(b) > 0 {
-		r, size := utf8.DecodeRune(b)
-		if r == utf8.RuneError || (!unicode.IsPrint(r) && !unicode.IsSpace(r)) {
-			return false
-		}
-		b = b[size:]
-	}
-	return true
+// Group returns an [Attr] for []Attr value.
+func Group(key string, value []Attr) Attr {
+	return attribute.Group(key, value)
+}
+
+// Obj returns an [Attr] for Serializer value.
+func Obj(key string, value attribute.Serializer) Attr {
+	return attribute.Obj(key, value)
 }

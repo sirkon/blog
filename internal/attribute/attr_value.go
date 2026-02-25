@@ -1,4 +1,4 @@
-package blog
+package attribute
 
 // Value uses that black magic borrowed from [slog.Value].
 //
@@ -112,10 +112,15 @@ type (
 		whateverPtr
 		string
 	}
+	groupPtr struct {
+		whateverPtr
+		Attr
+	}
 )
 
 type whateverPtr struct{}
 
+// Serialize dummy method to cheat compiler.
 func (p *whateverPtr) Serialize(src []byte) []byte { return src }
 
 var (
