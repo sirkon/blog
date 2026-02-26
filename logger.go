@@ -366,13 +366,7 @@ func compressStacktrace(dst *bytes.Buffer, stacktrace []byte) (err error) {
 		}
 		err = w.Close()
 	}()
-	defer func() {
-		if err != nil {
-			_ = w.Flush()
-			return
-		}
-		err = w.Flush()
-	}()
+
 	if _, err := w.Write(stacktrace); err != nil {
 		return err
 	}

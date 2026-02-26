@@ -1,32 +1,32 @@
 package main
 
 import (
-	"bytes"
 	"context"
-	"fmt"
 	"math"
+	"os"
 	"time"
 
 	"github.com/sirkon/blog"
 )
 
 func main() {
-	var buf bytes.Buffer
-	log, err := blog.NewLogger(&buf, blog.OptionLogLocations())
+	log, err := blog.NewLogger(
+		blog.NewViewWriteSyncer(blog.NewHumanView(), os.Stderr),
+		blog.OptionLogLocations(),
+	)
 	if err != nil {
 		panic(err)
 	}
 
+	start := time.Now()
 	log.Info(context.Background(),
 		"test",
 		blog.Str("text", "Hello world!"),
-		blog.Time("time", time.Now()),
+		blog.Time("time", start),
 		blog.Group("math-constants",
 			blog.Flt64("pi", math.Pi),
 			blog.Flt64("e", math.E),
 		),
+		blog.Duration("duration", time.Since(start)),
 	)
-
-	fmt.Println(buf.Bytes())
-	fmt.Println(buf.String())
 }

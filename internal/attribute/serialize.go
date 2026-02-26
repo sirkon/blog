@@ -23,7 +23,7 @@ func AppendSerialized(src []byte, attr Attr) []byte {
 	}
 
 	kind := attr.kind & 0xff
-	src = binary.AppendUvarint(src, uint64(kind))
+	src = append(src, byte(kind))
 
 	// Append attribute value. Will not write anything if this is an unsupported value.
 	switch kind {

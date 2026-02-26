@@ -341,7 +341,7 @@ func Uints(key string, value []uint) Attr {
 			num: uint64(len(value)),
 			srl: (*uintSlicePtr)(unsafe.Pointer(unsafe.SliceData(value))),
 		},
-		kind: ValueKindSliceUint8,
+		kind: ValueKindSliceUint,
 	}
 }
 

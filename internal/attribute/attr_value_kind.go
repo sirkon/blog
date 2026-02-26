@@ -51,7 +51,7 @@ const (
 
 	ValueKindMax ValueKind = 255
 
-	ValueKnownUserID = 1 << 8
+	ValueKnownUserID = 1 + 1<<8
 
 	// There're ValueKind values at 257 and further to represent [Attr] with predefined keys, where their
 	// lowest byte represents a kind and the upper 7 bytes refer a key index.
@@ -134,6 +134,9 @@ func (k ValueKind) String() string {
 	}
 }
 
-var FixedFields []string = []string{
+// PredefinedKeys keys can be set via the extension of kind in the
+// higher 7 bytes of uint64. That extended bytes keep an index of
+// the key value in this slice.
+var PredefinedKeys []string = []string{
 	"user-id",
 }
