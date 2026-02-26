@@ -7,47 +7,47 @@ import (
 type ValueKind uint64
 
 const (
-	valueKindInvalid ValueKind = iota
-	ValueKindNewNode
-	ValueKindWrapNode
-	ValueKindWrapInheritedNode
-	ValueKindJustContextNode
-	ValueKindJustInheritedContextNode
-	ValueKindBool
-	ValueKindTime
-	ValueKindDuration
-	ValueKindInt
-	ValueKindInt8
-	ValueKindInt16
-	ValueKindInt32
-	ValueKindInt64
-	ValueKindUint
-	ValueKindUint8
-	ValueKindUint16
-	ValueKindUint32
-	ValueKindUint64
-	ValueKindFloat32
-	ValueKindFloat64
-	ValueKindString
-	ValueKindBytes
-	ValueKindErrorRaw
-	ValueKindError
-	ValueKindSerializer
-	ValueKindSliceBool
-	ValueKindSliceInt
-	ValueKindSliceInt8
-	ValueKindSliceInt16
-	ValueKindSliceInt32
-	ValueKindSliceInt64
-	ValueKindSliceUint
-	ValueKindSliceUint8
-	ValueKindSliceUint16
-	ValueKindSliceUint32
-	ValueKindSliceUint64
-	ValueKindSliceFloat32
-	ValueKindSliceFloat64
-	ValueKindSliceString
-	ValueKindSliceGroup
+	valueKindInvalid                  ValueKind = 0
+	ValueKindNewNode                  ValueKind = 1
+	ValueKindWrapNode                 ValueKind = 2
+	ValueKindWrapInheritedNode        ValueKind = 3
+	ValueKindJustContextNode          ValueKind = 4
+	ValueKindJustContextInheritedNode ValueKind = 5
+	ValueKindBool                     ValueKind = 6
+	ValueKindTime                     ValueKind = 7
+	ValueKindDuration                 ValueKind = 8
+	ValueKindInt                      ValueKind = 9
+	ValueKindInt8                     ValueKind = 10
+	ValueKindInt16                    ValueKind = 11
+	ValueKindInt32                    ValueKind = 12
+	ValueKindInt64                    ValueKind = 13
+	ValueKindUint                     ValueKind = 14
+	ValueKindUint8                    ValueKind = 15
+	ValueKindUint16                   ValueKind = 16
+	ValueKindUint32                   ValueKind = 17
+	ValueKindUint64                   ValueKind = 18
+	ValueKindFloat32                  ValueKind = 19
+	ValueKindFloat64                  ValueKind = 20
+	ValueKindString                   ValueKind = 21
+	ValueKindBytes                    ValueKind = 22
+	ValueKindErrorRaw                 ValueKind = 23
+	ValueKindError                    ValueKind = 24
+	ValueKindSerializer               ValueKind = 25
+	ValueKindSliceBool                ValueKind = 26
+	ValueKindSliceInt                 ValueKind = 27
+	ValueKindSliceInt8                ValueKind = 28
+	ValueKindSliceInt16               ValueKind = 29
+	ValueKindSliceInt32               ValueKind = 30
+	ValueKindSliceInt64               ValueKind = 31
+	ValueKindSliceUint                ValueKind = 32
+	ValueKindSliceUint8               ValueKind = 33
+	ValueKindSliceUint16              ValueKind = 34
+	ValueKindSliceUint32              ValueKind = 35
+	ValueKindSliceUint64              ValueKind = 36
+	ValueKindSliceFloat32             ValueKind = 37
+	ValueKindSliceFloat64             ValueKind = 38
+	ValueKindSliceString              ValueKind = 39
+	ValueKindSliceGroup               ValueKind = 40
 
 	ValueKindMax ValueKind = 255
 

@@ -88,7 +88,10 @@ func (l *Logger) Error(ctx context.Context, msg string, attrs ...attribute.Attr)
 // in each output operation.
 func (l *Logger) With(ctx ...attribute.Attr) *Logger {
 	c := *l
-	// TODO serialize ctx into the c.prefixPayload
+	c.prefixPayload = bytes.Clone(l.prefixPayload)
+	for _, attr := range ctx {
+		c.prefixPayload = attribute.AppendSerialized(c.prefixPayload, attr)
+	}
 	return &c
 }
 
