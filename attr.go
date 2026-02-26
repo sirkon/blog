@@ -186,8 +186,8 @@ func Strs(key string, value []string) Attr {
 }
 
 // Group returns an [Attr] for []Attr value.
-func Group(key string, value []Attr) Attr {
-	return attribute.Group(key, value)
+func Group(key string, value ...Attr) Attr {
+	return attribute.Group(key, value...)
 }
 
 // Obj returns an [Attr] for Serializer value.

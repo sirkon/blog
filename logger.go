@@ -61,27 +61,27 @@ type WriteSyncer interface {
 
 // Trace logs at [LoggingLevelTrace].
 func (l *Logger) Trace(ctx context.Context, msg string, attrs ...attribute.Attr) {
-	l.logLevel(ctx, LoggingLevelTrace, msg, 0, attrs...)
+	l.logLevel(ctx, LoggingLevelTrace, msg, attrs...)
 }
 
 // Debug logs at [LoggingLevelDebug].
 func (l *Logger) Debug(ctx context.Context, msg string, attrs ...attribute.Attr) {
-	l.logLevel(ctx, LoggingLevelDebug, msg, 0, attrs...)
+	l.logLevel(ctx, LoggingLevelDebug, msg, attrs...)
 }
 
 // Info logs at [LoggingLevelInfo].
 func (l *Logger) Info(ctx context.Context, msg string, attrs ...attribute.Attr) {
-	l.logLevel(ctx, LoggingLevelInfo, msg, 0, attrs...)
+	l.logLevel(ctx, LoggingLevelInfo, msg, attrs...)
 }
 
 // Warn logs at [LoggingLevelWarning].
 func (l *Logger) Warn(ctx context.Context, msg string, attrs ...attribute.Attr) {
-	l.logLevel(ctx, LoggingLevelWarning, msg, 0, attrs...)
+	l.logLevel(ctx, LoggingLevelWarning, msg, attrs...)
 }
 
 // Error logs at [LoggingLevelError].
 func (l *Logger) Error(ctx context.Context, msg string, attrs ...attribute.Attr) {
-	l.logLevel(ctx, LoggingLevelInfo, msg, 0, attrs...)
+	l.logLevel(ctx, LoggingLevelInfo, msg, attrs...)
 }
 
 // With returns a Logger that includes the given attributes
@@ -98,14 +98,14 @@ func (l *Logger) With(ctx ...attribute.Attr) *Logger {
 // LogPanic logs given stack trace at the Panic logging level.
 // Is to be used withing panic recovery routines, something like:
 //
-//		defer func() {
-//		    r := recover()
-//	     if r == nil {
-//	         return
-//	     }
-//	     info := blog.LogPanicInfo(r)
-//	     blog.LogPanic(ctx, logger, debug.StackTrace(), info)
-//		}
+//	defer func() {
+//	    r := recover()
+//	    if r == nil {
+//	        return
+//	    }
+//	    info := blog.LogPanicInfo(r)
+//	    blog.LogPanic(ctx, logger, debug.Stack(), info)
+//	}()
 //
 // Panic text payload will be stored in gzipped form as a message.
 func LogPanic(ctx context.Context, log *Logger, stacktrace []byte, info attribute.Attr) {
@@ -118,15 +118,13 @@ func LogPanic(ctx context.Context, log *Logger, stacktrace []byte, info attribut
 	}
 
 	log.logLevel(
-		ctx,
-		loggingLevelPanic,
+		ctx, loggingLevelPanic,
 		unsafe.String(unsafe.SliceData(gzipped.Bytes()), gzipped.Len()),
-		0,
 		info,
 	)
 }
 
-// LogPanicInfo extract panic "recovered" attribute as meaningful form as possible.
+// LogPanicInfo extract panic "recovered" attribute in as meaningful form as possible.
 // Should be used within recovery procedures, see at [LogPanic] for usage example.
 func LogPanicInfo(v any) attribute.Attr {
 	var attr attribute.Attr
@@ -201,7 +199,6 @@ func LogPanicInfo(v any) attribute.Attr {
 }
 
 // logLevel logs record with given attributes with given level.
-// locationSkip parameter is used for location retrieval.
 //
 // The following sequence will be written in the end:
 //
@@ -211,10 +208,10 @@ func LogPanicInfo(v any) attribute.Attr {
 //   - ----------------------
 //   - Time (8 bytes)
 //   - Level (1 byte)
-//   - Location, either just 0 or UVARINT(file_name) file_name UVARINT(LINE)
-//   - Some custom payload provide by [Logger.appendCustom] method.
-//   - Message UVARING(message) message
-//   - Payload built with [Logger.With] (prefixPayload).
+//   - Location, either just 0 or UVARINT(len(file_name)) | file_name | UVARINT(LINE)
+//   - Some custom payload provided by [Logger.appendCustom] method.
+//   - Message UVARINT(len(message)) | message
+//   - Payload built with [Logger.With].
 //   - Serialized(attrs)
 //
 // [Logger.With] payload looks the same as its attributes would be in the head of attrs explicitly.
@@ -226,7 +223,6 @@ func (l *Logger) logLevel(
 	ctx context.Context,
 	level LoggingLevel,
 	msg string,
-	locationSkip int,
 	attrs ...attribute.Attr,
 ) {
 	if level < l.logFrom {
@@ -249,9 +245,8 @@ func (l *Logger) logLevel(
 
 	// Omit the first 1 + 4 + 10 bytes as we store 0xff + CRC32 + uvarint(record_size) in here.
 	// This uvarint part's length may differ, and we may need an adjustment to pack that header tightly.
-	logData := *logDataPtr
-	var record []byte
-	record = logData[15:15]
+	record := *logDataPtr
+	record = record[0:15]
 	defer l.putBufferBack(logDataPtr)
 
 	// Now, put fields.
@@ -266,8 +261,7 @@ func (l *Logger) logLevel(
 	if !l.logLocations {
 		record = append(record, 0)
 	} else {
-		locationSkip = max(3, locationSkip)
-		_, fn, line, ok := runtime.Caller(locationSkip)
+		_, fn, line, ok := runtime.Caller(2)
 		if ok {
 			record = binary.AppendUvarint(record, uint64(len(fn)))
 			record = append(record, fn...)
@@ -296,11 +290,11 @@ func (l *Logger) logLevel(
 	// Get CRC32, adjust the placement, put header and form a data to write.
 	checksum := crc32.Checksum(record, crcTable)
 	width := 5 + (bits.Len64(uint64(len(record)))+6)/7 // 0xFF + CRC + UVARINT(record.length)
-	data := logData[15-width:]
+	data := record[15-width : 15-width]
 	data = append(data, 0xff)
 	data = binary.LittleEndian.AppendUint32(data, checksum)
 	data = binary.AppendUvarint(data, uint64(len(record)))
-	data = data[:width+len(record)]
+	data = data[:width+len(record)-15]
 	*logDataPtr = data
 
 	// Write collected data.

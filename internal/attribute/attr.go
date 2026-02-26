@@ -430,14 +430,14 @@ func Strs(key string, value []string) Attr {
 }
 
 // Group returns an [Attr] for []Attr value.
-func Group(key string, value []Attr) Attr {
+func Group(key string, value ...Attr) Attr {
 	return Attr{
 		Key: key,
 		Value: Value{
 			num: uint64(len(value)),
 			srl: (*groupPtr)(unsafe.Pointer(unsafe.SliceData(value))),
 		},
-		kind: ValueKindSliceGroup,
+		kind: ValueKindGroup,
 	}
 }
 

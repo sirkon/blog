@@ -47,9 +47,11 @@ const (
 	ValueKindSliceFloat32             ValueKind = 37
 	ValueKindSliceFloat64             ValueKind = 38
 	ValueKindSliceString              ValueKind = 39
-	ValueKindSliceGroup               ValueKind = 40
+	ValueKindGroup                    ValueKind = 40
 
 	ValueKindMax ValueKind = 255
+
+	ValueKnownUserID = 1 << 8
 
 	// There're ValueKind values at 257 and further to represent [Attr] with predefined keys, where their
 	// lowest byte represents a kind and the upper 7 bytes refer a key index.
@@ -125,9 +127,13 @@ func (k ValueKind) String() string {
 		return "[]float64"
 	case ValueKindSliceString:
 		return "[]string"
-	case ValueKindSliceGroup:
+	case ValueKindGroup:
 		return "blog.Group"
 	default:
 		return fmt.Sprintf("value-kind-unknown[%d]", k)
 	}
+}
+
+var FixedFields []string = []string{
+	"user-id",
 }
