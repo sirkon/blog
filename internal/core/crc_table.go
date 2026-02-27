@@ -1,4 +1,4 @@
-package blog
+package core
 
 import (
 	"hash/crc32"

@@ -4,11 +4,16 @@ import (
 	"fmt"
 	"io"
 	"sync"
+
+	"github.com/sirkon/blog/internal/core"
 )
 
 // NewSyncWriter returns sync writer that is safe to use with the [Logger].
-func NewSyncWriter(w io.WriteCloser) WriteSyncer {
-	return &syncWriter{w: w}
+func NewSyncWriter(w io.Writer) core.WriteSyncer {
+	return &syncWriter{
+		lock: &sync.Mutex{},
+		w:    w,
+	}
 }
 
 type syncWriter struct {
@@ -30,10 +35,10 @@ func (s *syncWriter) Write(p []byte) (n int, err error) {
 
 type ViewWriteSyncer struct {
 	processor RecordConsumer
-	w         WriteSyncer
+	w         core.WriteSyncer
 }
 
-func NewViewWriteSyncer(processor RecordConsumer, w WriteSyncer) *ViewWriteSyncer {
+func NewViewWriteSyncer(processor RecordConsumer, w core.WriteSyncer) *ViewWriteSyncer {
 	return &ViewWriteSyncer{
 		processor: processor,
 		w:         w,

@@ -1,4 +1,4 @@
-package attribute
+package core
 
 // Value uses that black magic borrowed from [slog.Value].
 //

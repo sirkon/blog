@@ -2,23 +2,30 @@ package main
 
 import (
 	"context"
+	"io"
 	"math"
 	"os"
 	"time"
 
 	"github.com/sirkon/blog"
+	"github.com/sirkon/blog/beer"
+	"github.com/sirkon/blog/internal/core"
 )
 
 func main() {
-	log, err := blog.NewLogger(
-		blog.NewViewWriteSyncer(blog.NewHumanView(), os.Stderr),
-		blog.OptionLogLocations(),
+	log, err := core.NewLogger(
+		blog.NewViewWriteSyncer(blog.NewHumanView(), os.Stdout),
+		core.OptionLogLocations(),
 	)
 	if err != nil {
 		panic(err)
 	}
+	core.InsertLocationsOn()
 
 	start := time.Now()
+	err = beer.Wrap(io.EOF, "check error").Str("tag", "tag value")
+	err = beer.Just(err).Int("key", 12)
+	err = beer.Wrap(err, "another check").Bool("bool", true)
 	log.Info(context.Background(),
 		"test",
 		blog.Str("text", "Hello world!"),
@@ -28,5 +35,8 @@ func main() {
 			blog.Flt64("e", math.E),
 		),
 		blog.Duration("duration", time.Since(start)),
+		blog.Err(io.EOF),
+		blog.Strs("words", []string{"I", "am", "waiting", "for", "the", "spring"}),
+		blog.Error("err-with-ctx", err),
 	)
 }

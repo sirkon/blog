@@ -1,4 +1,4 @@
-package attribute
+package core
 
 import (
 	"fmt"
@@ -13,41 +13,42 @@ const (
 	ValueKindWrapInheritedNode        ValueKind = 3
 	ValueKindJustContextNode          ValueKind = 4
 	ValueKindJustContextInheritedNode ValueKind = 5
-	ValueKindBool                     ValueKind = 6
-	ValueKindTime                     ValueKind = 7
-	ValueKindDuration                 ValueKind = 8
-	ValueKindInt                      ValueKind = 9
-	ValueKindInt8                     ValueKind = 10
-	ValueKindInt16                    ValueKind = 11
-	ValueKindInt32                    ValueKind = 12
-	ValueKindInt64                    ValueKind = 13
-	ValueKindUint                     ValueKind = 14
-	ValueKindUint8                    ValueKind = 15
-	ValueKindUint16                   ValueKind = 16
-	ValueKindUint32                   ValueKind = 17
-	ValueKindUint64                   ValueKind = 18
-	ValueKindFloat32                  ValueKind = 19
-	ValueKindFloat64                  ValueKind = 20
-	ValueKindString                   ValueKind = 21
-	ValueKindBytes                    ValueKind = 22
-	ValueKindErrorRaw                 ValueKind = 23
-	ValueKindError                    ValueKind = 24
-	ValueKindSerializer               ValueKind = 25
-	ValueKindSliceBool                ValueKind = 26
-	ValueKindSliceInt                 ValueKind = 27
-	ValueKindSliceInt8                ValueKind = 28
-	ValueKindSliceInt16               ValueKind = 29
-	ValueKindSliceInt32               ValueKind = 30
-	ValueKindSliceInt64               ValueKind = 31
-	ValueKindSliceUint                ValueKind = 32
-	ValueKindSliceUint8               ValueKind = 33
-	ValueKindSliceUint16              ValueKind = 34
-	ValueKindSliceUint32              ValueKind = 35
-	ValueKindSliceUint64              ValueKind = 36
-	ValueKindSliceFloat32             ValueKind = 37
-	ValueKindSliceFloat64             ValueKind = 38
-	ValueKindSliceString              ValueKind = 39
-	ValueKindGroup                    ValueKind = 40
+	ValueKindLocationNode             ValueKind = 6
+	ValueKindBool                     ValueKind = 8
+	ValueKindTime                     ValueKind = 9
+	ValueKindDuration                 ValueKind = 10
+	ValueKindInt                      ValueKind = 11
+	ValueKindInt8                     ValueKind = 12
+	ValueKindInt16                    ValueKind = 13
+	ValueKindInt32                    ValueKind = 14
+	ValueKindInt64                    ValueKind = 15
+	ValueKindUint                     ValueKind = 16
+	ValueKindUint8                    ValueKind = 17
+	ValueKindUint16                   ValueKind = 18
+	ValueKindUint32                   ValueKind = 19
+	ValueKindUint64                   ValueKind = 20
+	ValueKindFloat32                  ValueKind = 21
+	ValueKindFloat64                  ValueKind = 22
+	ValueKindString                   ValueKind = 23
+	ValueKindBytes                    ValueKind = 24
+	ValueKindErrorRaw                 ValueKind = 25
+	ValueKindError                    ValueKind = 26
+	ValueKindSerializer               ValueKind = 27
+	ValueKindSliceBool                ValueKind = 28
+	ValueKindSliceInt                 ValueKind = 29
+	ValueKindSliceInt8                ValueKind = 30
+	ValueKindSliceInt16               ValueKind = 31
+	ValueKindSliceInt32               ValueKind = 32
+	ValueKindSliceInt64               ValueKind = 33
+	ValueKindSliceUint                ValueKind = 34
+	ValueKindSliceUint8               ValueKind = 35
+	ValueKindSliceUint16              ValueKind = 36
+	ValueKindSliceUint32              ValueKind = 37
+	ValueKindSliceUint64              ValueKind = 38
+	ValueKindSliceFloat32             ValueKind = 39
+	ValueKindSliceFloat64             ValueKind = 40
+	ValueKindSliceString              ValueKind = 41
+	ValueKindGroup                    ValueKind = 42
 
 	ValueKindMax ValueKind = 255
 

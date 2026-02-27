@@ -6,7 +6,7 @@ import (
 	"math"
 	"time"
 
-	"github.com/sirkon/blog/internal/attribute"
+	"github.com/sirkon/blog/internal/core"
 )
 
 // RecordConsumer API to consume record data.
@@ -15,7 +15,7 @@ type RecordConsumer interface {
 	Reset()
 
 	SetTime(timeUnixNano uint64)
-	SetLevel(level LoggingLevel)
+	SetLevel(level core.LoggingLevel)
 	SetLocation(file string, line int)
 	SetMessage(text string)
 
@@ -26,7 +26,9 @@ type RecordConsumer interface {
 type RecordAttributesConsumer interface {
 	Append(key string, value any)
 	AppendGroup(key string) RecordAttributesConsumer
+	AppendEmptyGroup(key string) RecordAttributesConsumer
 	AppendError(key string) RecordAttributesConsumer
+	Finish() RecordAttributesConsumer
 }
 
 // RecordSafeView provides human-readable output over [Logger] produced binary stream.
@@ -42,7 +44,7 @@ func RecordSafeView(cons RecordConsumer, data []byte) error {
 	// So, we have a record content in our hands.
 	tim := binary.LittleEndian.Uint64(data)
 	cons.SetTime(tim)
-	cons.SetLevel(LoggingLevel(data[8]))
+	cons.SetLevel(core.LoggingLevel(data[8]))
 	data = data[9:]
 
 	// Check if is there a location.
@@ -78,92 +80,120 @@ func consumeContext(cons RecordAttributesConsumer, src []byte, width int) []byte
 			break
 		}
 
+		kind := core.ValueKind(src[0])
+		src = src[1:]
+		switch kind {
+		case core.ValueKindJustContextNode, core.ValueKindJustContextInheritedNode:
+			cons = cons.Finish()
+			cons = cons.AppendGroup("CTX")
+			continue
+		}
+
 		var key string
 		if src[0] == 0 {
-			keyCode, varintLengh := binary.Uvarint(src[1:])
-			key = attribute.PredefinedKeys[keyCode]
-			src = src[varintLengh+1:]
+			keyCode, varintLength := binary.Uvarint(src[1:])
+			key = core.PredefinedKeys[keyCode]
+			src = src[varintLength+1:]
 		} else {
 			length, varintLength := binary.Uvarint(src)
 			key = string(src[varintLength : varintLength+int(length)])
 			src = src[varintLength+int(length):]
 		}
 
-		kind := src[0]
-		src = src[1:]
-		switch attribute.ValueKind(kind) {
-		case attribute.ValueKindBool:
+		switch kind {
+		case core.ValueKindNewNode:
+			cons = cons.Finish()
+			cons = cons.AppendGroup("NEW: " + key)
+		case core.ValueKindWrapNode:
+			cons = cons.Finish()
+			cons = cons.AppendGroup("WRAP: " + key)
+		case core.ValueKindWrapInheritedNode:
+			cons = cons.Finish()
+			cons = cons.AppendGroup("WRAP: " + key)
+		case core.ValueKindLocationNode:
+			line, varintLengh := binary.Uvarint(src)
+			src = src[varintLengh:]
+			cons.Append("@location", fmt.Sprintf("%s:%d", key, line))
+		case core.ValueKindBool:
 			cons.Append(key, src[0] != 0)
 			src = src[1:]
-		case attribute.ValueKindTime:
+		case core.ValueKindTime:
 			tim := binary.LittleEndian.Uint64(src)
 			cons.Append(key, time.Unix(0, int64(tim)))
 			src = src[8:]
-		case attribute.ValueKindDuration:
+		case core.ValueKindDuration:
 			dur := binary.LittleEndian.Uint64(src)
 			cons.Append(key, time.Duration(dur))
 			src = src[8:]
-		case attribute.ValueKindInt:
+		case core.ValueKindInt:
 			val := binary.LittleEndian.Uint64(src)
 			cons.Append(key, int(val))
 			src = src[8:]
-		case attribute.ValueKindInt8:
+		case core.ValueKindInt8:
 			cons.Append(key, int8(src[0]))
 			src = src[1:]
-		case attribute.ValueKindInt16:
+		case core.ValueKindInt16:
 			val := binary.LittleEndian.Uint16(src)
 			cons.Append(key, int16(val))
 			src = src[2:]
-		case attribute.ValueKindInt32:
+		case core.ValueKindInt32:
 			val := binary.LittleEndian.Uint32(src)
 			cons.Append(key, int32(val))
 			src = src[4:]
-		case attribute.ValueKindInt64:
+		case core.ValueKindInt64:
 			val := binary.LittleEndian.Uint64(src)
 			cons.Append(key, int64(val))
 			src = src[8:]
-		case attribute.ValueKindUint:
+		case core.ValueKindUint:
 			val := binary.LittleEndian.Uint64(src)
 			cons.Append(key, uint(val))
 			src = src[8:]
-		case attribute.ValueKindUint8:
+		case core.ValueKindUint8:
 			cons.Append(key, src[0])
 			src = src[1:]
-		case attribute.ValueKindUint16:
+		case core.ValueKindUint16:
 			val := binary.LittleEndian.Uint16(src)
 			cons.Append(key, val)
 			src = src[2:]
-		case attribute.ValueKindUint32:
+		case core.ValueKindUint32:
 			val := binary.LittleEndian.Uint32(src)
 			cons.Append(key, val)
 			src = src[4:]
-		case attribute.ValueKindUint64:
+		case core.ValueKindUint64:
 			val := binary.LittleEndian.Uint64(src)
 			cons.Append(key, val)
 			src = src[8:]
-		case attribute.ValueKindFloat32:
+		case core.ValueKindFloat32:
 			val := binary.LittleEndian.Uint32(src)
 			cons.Append(key, math.Float32frombits(val))
 			src = src[4:]
-		case attribute.ValueKindFloat64:
+		case core.ValueKindFloat64:
 			val := binary.LittleEndian.Uint64(src)
 			cons.Append(key, math.Float64frombits(val))
 			src = src[8:]
-		case attribute.ValueKindString:
+		case core.ValueKindString:
 			length, varintLength := binary.Uvarint(src)
 			cons.Append(key, string(src[varintLength:varintLength+int(length)]))
 			src = src[varintLength+int(length):]
-		case attribute.ValueKindBytes:
+		case core.ValueKindBytes:
 			length, varintLength := binary.Uvarint(src)
 			cons.Append(key, src[varintLength:varintLength+int(length)])
 			src = src[varintLength+int(length):]
-		case attribute.ValueKindErrorRaw:
+		case core.ValueKindErrorRaw:
 			length, varintLength := binary.Uvarint(src)
 			cons.Append(key, string(src[varintLength:varintLength+int(length)]))
 			src = src[varintLength+int(length):]
-		case attribute.ValueKindError:
-			// TODO implement once beer.Error is ready.
-		case attribute.ValueKindSliceBool:
+		case core.ValueKindError:
+			length, varintLength := binary.Uvarint(src)
+			errMsg := src[varintLength : varintLength+int(length)]
+			src = src[varintLength+int(length):]
+			group := cons.AppendGroup(key)
+			group.Append("text", string(errMsg))
+			length, varintLength = binary.Uvarint(src)
+			appendGroup := group.AppendEmptyGroup("@context")
+			consumeContext(appendGroup, src[varintLength:varintLength+int(length)], -1)
+			src = src[varintLength+int(length):]
+		case core.ValueKindSliceBool:
 			length, varintLength := binary.Uvarint(src)
 			src = src[varintLength:]
 			slice := make([]bool, length)
@@ -172,7 +202,7 @@ func consumeContext(cons RecordAttributesConsumer, src []byte, width int) []byte
 			}
 			cons.Append(key, slice)
 			src = src[length:]
-		case attribute.ValueKindSliceInt:
+		case core.ValueKindSliceInt:
 			length, varintLength := binary.Uvarint(src)
 			src = src[varintLength:]
 			slice := make([]int, length)
@@ -182,7 +212,7 @@ func consumeContext(cons RecordAttributesConsumer, src []byte, width int) []byte
 				src = src[8:]
 			}
 			cons.Append(key, slice)
-		case attribute.ValueKindSliceInt8:
+		case core.ValueKindSliceInt8:
 			length, varintLength := binary.Uvarint(src)
 			src = src[varintLength:]
 			slice := make([]int8, length)
@@ -191,7 +221,7 @@ func consumeContext(cons RecordAttributesConsumer, src []byte, width int) []byte
 			}
 			cons.Append(key, slice)
 			src = src[length:]
-		case attribute.ValueKindSliceInt16:
+		case core.ValueKindSliceInt16:
 			length, varintLength := binary.Uvarint(src)
 			src = src[varintLength:]
 			slice := make([]int16, length)
@@ -201,7 +231,7 @@ func consumeContext(cons RecordAttributesConsumer, src []byte, width int) []byte
 				src = src[2:]
 			}
 			cons.Append(key, slice)
-		case attribute.ValueKindSliceInt32:
+		case core.ValueKindSliceInt32:
 			length, varintLength := binary.Uvarint(src)
 			src = src[varintLength:]
 			slice := make([]int32, length)
@@ -211,7 +241,7 @@ func consumeContext(cons RecordAttributesConsumer, src []byte, width int) []byte
 				src = src[4:]
 			}
 			cons.Append(key, slice)
-		case attribute.ValueKindSliceInt64:
+		case core.ValueKindSliceInt64:
 			length, varintLength := binary.Uvarint(src)
 			src = src[varintLength:]
 			slice := make([]int64, length)
@@ -221,7 +251,7 @@ func consumeContext(cons RecordAttributesConsumer, src []byte, width int) []byte
 				src = src[8:]
 			}
 			cons.Append(key, slice)
-		case attribute.ValueKindSliceUint:
+		case core.ValueKindSliceUint:
 			length, varuintLength := binary.Uvarint(src)
 			src = src[varuintLength:]
 			slice := make([]uint, length)
@@ -231,7 +261,7 @@ func consumeContext(cons RecordAttributesConsumer, src []byte, width int) []byte
 				src = src[8:]
 			}
 			cons.Append(key, slice)
-		case attribute.ValueKindSliceUint8:
+		case core.ValueKindSliceUint8:
 			length, varuintLength := binary.Uvarint(src)
 			src = src[varuintLength:]
 			slice := make([]uint8, length)
@@ -240,7 +270,7 @@ func consumeContext(cons RecordAttributesConsumer, src []byte, width int) []byte
 			}
 			cons.Append(key, slice)
 			src = src[length:]
-		case attribute.ValueKindSliceUint16:
+		case core.ValueKindSliceUint16:
 			length, varuintLength := binary.Uvarint(src)
 			src = src[varuintLength:]
 			slice := make([]uint16, length)
@@ -250,7 +280,7 @@ func consumeContext(cons RecordAttributesConsumer, src []byte, width int) []byte
 				src = src[2:]
 			}
 			cons.Append(key, slice)
-		case attribute.ValueKindSliceUint32:
+		case core.ValueKindSliceUint32:
 			length, varuintLength := binary.Uvarint(src)
 			src = src[varuintLength:]
 			slice := make([]uint32, length)
@@ -260,7 +290,7 @@ func consumeContext(cons RecordAttributesConsumer, src []byte, width int) []byte
 				src = src[4:]
 			}
 			cons.Append(key, slice)
-		case attribute.ValueKindSliceUint64:
+		case core.ValueKindSliceUint64:
 			length, varuintLength := binary.Uvarint(src)
 			src = src[varuintLength:]
 			slice := make([]uint64, length)
@@ -271,7 +301,7 @@ func consumeContext(cons RecordAttributesConsumer, src []byte, width int) []byte
 			}
 			cons.Append(key, slice)
 
-		case attribute.ValueKindSliceFloat32:
+		case core.ValueKindSliceFloat32:
 			length, varfloatLength := binary.Uvarint(src)
 			src = src[varfloatLength:]
 			slice := make([]float32, length)
@@ -281,7 +311,7 @@ func consumeContext(cons RecordAttributesConsumer, src []byte, width int) []byte
 				src = src[4:]
 			}
 			cons.Append(key, slice)
-		case attribute.ValueKindSliceFloat64:
+		case core.ValueKindSliceFloat64:
 			length, varfloatLength := binary.Uvarint(src)
 			src = src[varfloatLength:]
 			slice := make([]float64, length)
@@ -291,7 +321,7 @@ func consumeContext(cons RecordAttributesConsumer, src []byte, width int) []byte
 				src = src[8:]
 			}
 			cons.Append(key, slice)
-		case attribute.ValueKindSliceString:
+		case core.ValueKindSliceString:
 			length, varintLength := binary.Uvarint(src)
 			src = src[varintLength:]
 			slice := make([]string, length)
@@ -303,7 +333,7 @@ func consumeContext(cons RecordAttributesConsumer, src []byte, width int) []byte
 			}
 			cons.Append(key, slice)
 
-		case attribute.ValueKindGroup:
+		case core.ValueKindGroup:
 			length, varintLength := binary.Uvarint(src)
 			src = src[varintLength:]
 			src = consumeContext(cons.AppendGroup(key), src, int(length))

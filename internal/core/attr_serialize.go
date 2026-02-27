@@ -1,4 +1,4 @@
-package attribute
+package core
 
 import (
 	"encoding/binary"
@@ -10,6 +10,15 @@ const serializeDefaultSize = 256
 
 // AppendSerialized serialize attr appending data to the src.
 func AppendSerialized(src []byte, attr Attr) []byte {
+	kind := attr.kind & 0xff
+
+	src = append(src, byte(kind))
+
+	switch attr.kind {
+	case ValueKindJustContextNode, ValueKindJustContextInheritedNode:
+		return src
+	}
+
 	// Кладем ключ.
 	knownKey := attr.kind >> 8
 	if knownKey == 0 {
@@ -22,11 +31,10 @@ func AppendSerialized(src []byte, attr Attr) []byte {
 		src = binary.AppendUvarint(src, uint64(knownKey))
 	}
 
-	kind := attr.kind & 0xff
-	src = append(src, byte(kind))
-
-	// Append attribute value. Will not write anything if this is an unsupported value.
+	// Append core value. Will not write anything if this is an unsupported value.
 	switch kind {
+	case ValueKindLocationNode:
+		src = binary.AppendUvarint(src, attr.Value.num)
 	case ValueKindBool, ValueKindInt8, ValueKindUint8:
 		src = append(src, byte(attr.Value.num))
 	case
@@ -48,7 +56,11 @@ func AppendSerialized(src []byte, attr Attr) []byte {
 		v := attr.Value.srl.(*bytesPtr)
 		src = append(src, unsafe.Slice((*byte)(unsafe.Pointer(v)), attr.Value.num)...)
 	case ValueKindError:
-		// TODO implement this once beer is ready.
+		errPtr := (*Error)(unsafe.Pointer(attr.Value.srl.(*errorPtr)))
+		src = binary.AppendUvarint(src, uint64(len(errPtr.text)))
+		src = append(src, errPtr.text...)
+		src = binary.AppendUvarint(src, uint64(len(errPtr.payload)))
+		src = append(src, errPtr.payload...)
 	case ValueKindSerializer:
 		data := attr.Value.srl.Serialize(make([]byte, 0, serializeDefaultSize))
 		src = binary.AppendUvarint(src, uint64(len(data)))

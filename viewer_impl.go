@@ -3,6 +3,8 @@ package blog
 import (
 	"go/token"
 	"time"
+
+	"github.com/sirkon/blog/internal/core"
 )
 
 func NewHumanView() RecordConsumer {
@@ -13,7 +15,7 @@ func NewHumanView() RecordConsumer {
 
 type humanRecordView struct {
 	time     time.Time
-	level    LoggingLevel
+	level    core.LoggingLevel
 	location token.Position
 	message  string
 
@@ -40,7 +42,7 @@ func (r *humanRecordView) SetTime(timeUnixNano uint64) {
 	r.time = time.Unix(0, int64(timeUnixNano))
 }
 
-func (r *humanRecordView) SetLevel(level LoggingLevel) {
+func (r *humanRecordView) SetLevel(level core.LoggingLevel) {
 	r.level = level
 }
 
@@ -62,7 +64,9 @@ func (r *humanRecordView) RootAttrConsumer() RecordAttributesConsumer {
 }
 
 type recordHumanContextView struct {
-	tree *ctxNodes
+	parent          *recordHumanContextView
+	tree            *ctxNodes
+	omitFirstFinish bool
 }
 
 func (r *recordHumanContextView) Append(key string, value any) {
@@ -79,7 +83,21 @@ func (r *recordHumanContextView) AppendGroup(key string) RecordAttributesConsume
 		value: n,
 	})
 	return &recordHumanContextView{
-		tree: n,
+		parent: r,
+		tree:   n,
+	}
+}
+
+func (r *recordHumanContextView) AppendEmptyGroup(key string) RecordAttributesConsumer {
+	n := &ctxNodes{}
+	r.tree.payload = append(r.tree.payload, ctxNode{
+		key:   key,
+		value: n,
+	})
+	return &recordHumanContextView{
+		parent:          r,
+		tree:            n,
+		omitFirstFinish: true,
 	}
 }
 
@@ -90,6 +108,20 @@ func (r *recordHumanContextView) AppendError(key string) RecordAttributesConsume
 		value: n,
 	})
 	return &recordHumanContextView{
-		tree: n,
+		parent: r,
+		tree:   n,
 	}
+}
+
+func (r *recordHumanContextView) Finish() RecordAttributesConsumer {
+	if r.parent == nil {
+		return r
+	}
+
+	if r.omitFirstFinish {
+		r.omitFirstFinish = false
+		return r
+	}
+
+	return r.parent
 }
