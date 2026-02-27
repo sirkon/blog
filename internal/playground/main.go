@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"math"
 	"os"
@@ -26,6 +27,7 @@ func main() {
 	err = beer.Wrap(io.EOF, "check error").Str("tag", "tag value")
 	err = beer.Just(err).Int("key", 12)
 	err = beer.Wrap(err, "another check").Bool("bool", true)
+	err = fmt.Errorf("top check: %w", err)
 	log.Info(context.Background(),
 		"test",
 		blog.Str("text", "Hello world!"),

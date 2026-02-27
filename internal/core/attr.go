@@ -256,7 +256,6 @@ func Bytes(key string, value []byte) Attr {
 }
 
 // ErrorAttr returns an [Attr] for error value packed as just a string.
-// TODO implement dedicated [beer.Error] support.
 func ErrorAttr(key string, err error) Attr {
 	_ = key[0]
 	e, ok := err.(*Error)
