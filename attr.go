@@ -15,6 +15,13 @@ import (
 //	}
 type Attr = core.Attr
 
+// Serializer type alias for [core.Serializer, which is just
+//
+//	type Serializer interface {
+//	    Serialize(src []byte) []byte
+//	}
+type Serializer = core.Serializer
+
 // Bool returns an [Attr] for boolean value.
 func Bool(key string, value bool) Attr {
 	return core.Bool(key, value)
@@ -190,7 +197,7 @@ func Group(key string, value ...Attr) Attr {
 	return core.Group(key, value...)
 }
 
-// Obj returns an [Attr] for Serializer value.
-func Obj(key string, value core.Serializer) Attr {
+// Serial returns an [Attr] for Serializer value.
+func Serial(key string, value Serializer) Attr {
 	return core.Obj(key, value)
 }

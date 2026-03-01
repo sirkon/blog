@@ -57,6 +57,10 @@ func AppendSerialized(src []byte, attr Attr) []byte {
 		src = append(src, unsafe.Slice((*byte)(unsafe.Pointer(v)), attr.Value.num)...)
 	case ValueKindError:
 		errPtr := (*Error)(unsafe.Pointer(attr.Value.srl.(*errorPtr)))
+		src = binary.AppendUvarint(src, uint64(len(errPtr.payload)))
+		src = append(src, errPtr.payload...)
+	case ValueKindErrorEmbed:
+		errPtr := (*Error)(unsafe.Pointer(attr.Value.srl.(*errorPtr)))
 		src = binary.AppendUvarint(src, uint64(len(errPtr.text)))
 		src = append(src, errPtr.text...)
 		src = binary.AppendUvarint(src, uint64(len(errPtr.payload)))

@@ -296,7 +296,7 @@ func (l *Logger) logLevel(
 
 	// Write collected data.
 	if _, err := l.w.Write(data); err != nil {
-		fmt.Println("failed to write logged data:", err)
+		fmt.Printf("failed to write logged data %v: %s\n", data, err)
 	}
 }
 

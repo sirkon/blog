@@ -261,15 +261,33 @@ func ErrorAttr(key string, err error) Attr {
 	e, ok := err.(*Error)
 	if !ok {
 		e, ok = errors.AsType[*Error](err)
+		if ok {
+			e = &Error{
+				payload:    e.payload,
+				wrap:       e.wrap,
+				sufficient: false,
+			}
+		}
 	}
 	if ok {
-		e.text = err.Error()
+		// CAUTION: we typically doesn't have enough info in the payload
+		// to reconstruct a message just with payload alone. Foreign
+		// errors are black boxes, and we need to compute the whole message
+		// explicitly in order not to lose precise text. But there's a corner
+		// where we still can optimize: if a foreign error is on the very tail.
+		// We can embed its text in the payload then.
+		kind := ValueKindError
+		if !e.sufficient {
+			e.text = err.Error()
+			kind = ValueKindErrorEmbed
+		}
+
 		return Attr{
 			Key: key,
 			Value: Value{
 				srl: (*errorPtr)(unsafe.Pointer(e)),
 			},
-			kind: ValueKindError,
+			kind: kind,
 		}
 	}
 

@@ -16,7 +16,7 @@ import (
 func main() {
 	log, err := core.NewLogger(
 		blog.NewViewWriteSyncer(blog.NewHumanView(), os.Stdout),
-		core.OptionLogLocations(),
+		//core.OptionLogLocations(),
 	)
 	if err != nil {
 		panic(err)
@@ -28,6 +28,7 @@ func main() {
 	err = beer.Just(err).Int("key", 12)
 	err = beer.Wrap(err, "another check").Bool("bool", true)
 	err = fmt.Errorf("top check: %w", err)
+
 	log.Info(context.Background(),
 		"test",
 		blog.Str("text", "Hello world!"),
@@ -41,4 +42,14 @@ func main() {
 		blog.Strs("words", []string{"I", "am", "waiting", "for", "the", "spring"}),
 		blog.Error("err-with-ctx", err),
 	)
+
+	err = beer.New("error")
+	err = beer.Wrap(err, "inner wrap").Str("tag", "tag value")
+	err = fmt.Errorf("foreign wrap: %w", err)
+	log.Debug(nil,
+		"logging with foreign error",
+		blog.Err(err),
+	)
+
+	log.Debug(nil, "log", blog.Err(io.EOF))
 }
