@@ -184,6 +184,15 @@ func consumeContext(cons RecordAttributesConsumer, src []byte, width int) []byte
 			cons.Append(key, string(src[varintLength:varintLength+int(length)]))
 			src = src[varintLength+int(length):]
 		case core.ValueKindError:
+			group := cons.AppendGroup(key)
+			length, varintLength := binary.Uvarint(src)
+			errPayload := src[varintLength : varintLength+int(length)]
+			errMsg := core.SufficientErrorBytes(errPayload)
+			group.Append("text", string(errMsg))
+			appendGroup := group.AppendEmptyGroup("@context")
+			consumeContext(appendGroup, errPayload, -1)
+			src = src[varintLength+int(length):]
+		case core.ValueKindErrorEmbed:
 			length, varintLength := binary.Uvarint(src)
 			errMsg := src[varintLength : varintLength+int(length)]
 			src = src[varintLength+int(length):]

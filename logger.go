@@ -6,6 +6,7 @@ import (
 	"github.com/sirkon/blog/internal/core"
 )
 
+// Logger an alias for [core.Logger].
 type Logger = core.Logger
 
 // NewLogger creates a new logger writing into the given WriteSyncer.
@@ -38,11 +39,12 @@ func LogPanicInfo(v any) Attr {
 
 // OptionLogLocations logger will show locations of logging.
 func OptionLogLocations() core.OptionApplier {
-	return OptionLogLocations()
+	return core.OptionLogLocations()
 }
 
+// OptionLogFromLevel logger will only log from given level and further.
 func OptionLogFromLevel(l core.LoggingLevel) core.OptionApplier {
-	return OptionLogFromLevel(l)
+	return core.OptionLogFromLevel(l)
 }
 
 const (

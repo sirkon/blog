@@ -21,8 +21,9 @@ func newError(msg string) *Error {
 	payload = AppendSerialized(payload, attr)
 
 	res := &Error{
-		payload: payload,
-		wrap:    nil,
+		payload:    payload,
+		wrap:       nil,
+		sufficient: true,
 	}
 
 	if insertLocations {

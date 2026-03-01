@@ -7,48 +7,65 @@ import (
 type ValueKind uint64
 
 const (
-	valueKindInvalid                  ValueKind = 0
+	valueKindInvalid ValueKind = 0
+
+	// --- Group 1: tree nodes and metadata  ---
+
 	ValueKindNewNode                  ValueKind = 1
 	ValueKindWrapNode                 ValueKind = 2
 	ValueKindWrapInheritedNode        ValueKind = 3
 	ValueKindJustContextNode          ValueKind = 4
 	ValueKindJustContextInheritedNode ValueKind = 5
 	ValueKindLocationNode             ValueKind = 6
-	ValueKindBool                     ValueKind = 8
-	ValueKindTime                     ValueKind = 9
-	ValueKindDuration                 ValueKind = 10
-	ValueKindInt                      ValueKind = 11
-	ValueKindInt8                     ValueKind = 12
-	ValueKindInt16                    ValueKind = 13
-	ValueKindInt32                    ValueKind = 14
-	ValueKindInt64                    ValueKind = 15
-	ValueKindUint                     ValueKind = 16
-	ValueKindUint8                    ValueKind = 17
-	ValueKindUint16                   ValueKind = 18
-	ValueKindUint32                   ValueKind = 19
-	ValueKindUint64                   ValueKind = 20
-	ValueKindFloat32                  ValueKind = 21
-	ValueKindFloat64                  ValueKind = 22
-	ValueKindString                   ValueKind = 23
-	ValueKindBytes                    ValueKind = 24
-	ValueKindErrorRaw                 ValueKind = 25
-	ValueKindError                    ValueKind = 26
-	ValueKindSerializer               ValueKind = 27
-	ValueKindSliceBool                ValueKind = 28
-	ValueKindSliceInt                 ValueKind = 29
-	ValueKindSliceInt8                ValueKind = 30
-	ValueKindSliceInt16               ValueKind = 31
-	ValueKindSliceInt32               ValueKind = 32
-	ValueKindSliceInt64               ValueKind = 33
-	ValueKindSliceUint                ValueKind = 34
-	ValueKindSliceUint8               ValueKind = 35
-	ValueKindSliceUint16              ValueKind = 36
-	ValueKindSliceUint32              ValueKind = 37
-	ValueKindSliceUint64              ValueKind = 38
-	ValueKindSliceFloat32             ValueKind = 39
-	ValueKindSliceFloat64             ValueKind = 40
-	ValueKindSliceString              ValueKind = 41
-	ValueKindGroup                    ValueKind = 42
+	ValueKindForeignErrorText         ValueKind = 7
+	ValueKindForeignErrorFormat       ValueKind = 8
+	ValueKindSerializer               ValueKind = 9
+	ValueKindPhantomContextNode       ValueKind = 10
+
+	// --- Group 2: Payload / base types (32+) ---
+
+	ValueKindBool     ValueKind = 32
+	ValueKindTime     ValueKind = 33
+	ValueKindDuration ValueKind = 34
+	ValueKindInt      ValueKind = 35
+	ValueKindInt8     ValueKind = 36
+	ValueKindInt16    ValueKind = 37
+	ValueKindInt32    ValueKind = 38
+	ValueKindInt64    ValueKind = 39
+	ValueKindUint     ValueKind = 40
+	ValueKindUint8    ValueKind = 41
+	ValueKindUint16   ValueKind = 42
+	ValueKindUint32   ValueKind = 43
+	ValueKindUint64   ValueKind = 44
+	ValueKindFloat32  ValueKind = 45
+	ValueKindFloat64  ValueKind = 46
+	ValueKindString   ValueKind = 47
+	ValueKindBytes    ValueKind = 48
+	ValueKindErrorRaw ValueKind = 49
+
+	// --- Group 3: Complex structs and slices (64+) ---
+
+	// ValueKindError keeps just a collected payload and compute error
+	// message based on it.
+	ValueKindError ValueKind = 64
+	// ValueKindErrorEmbed keeps an error AND a text at the same time.
+	ValueKindErrorEmbed ValueKind = 65
+	ValueKindGroup      ValueKind = 66
+
+	ValueKindSliceBool    ValueKind = 70
+	ValueKindSliceInt     ValueKind = 71
+	ValueKindSliceInt8    ValueKind = 72
+	ValueKindSliceInt16   ValueKind = 73
+	ValueKindSliceInt32   ValueKind = 74
+	ValueKindSliceInt64   ValueKind = 75
+	ValueKindSliceUint    ValueKind = 76
+	ValueKindSliceUint8   ValueKind = 77
+	ValueKindSliceUint16  ValueKind = 78
+	ValueKindSliceUint32  ValueKind = 79
+	ValueKindSliceUint64  ValueKind = 80
+	ValueKindSliceFloat32 ValueKind = 81
+	ValueKindSliceFloat64 ValueKind = 82
+	ValueKindSliceString  ValueKind = 83
 
 	ValueKindMax ValueKind = 255
 

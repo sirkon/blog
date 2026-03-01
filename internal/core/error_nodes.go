@@ -35,6 +35,26 @@ func ErrorNodeJustContextInherited() Attr {
 	}
 }
 
+func ErrorNodeForeignErrorText(txt string) Attr {
+	return Attr{
+		Key:  txt,
+		kind: ValueKindForeignErrorText,
+	}
+}
+
+func ErrorNodeForeignErrorFormat(txt string) Attr {
+	return Attr{
+		Key:  txt,
+		kind: ValueKindForeignErrorFormat,
+	}
+}
+
+func ErrorNodePhantomContext() Attr {
+	return Attr{
+		kind: ValueKindPhantomContextNode,
+	}
+}
+
 func ErrorNodeLocation(file string, line int) Attr {
 	return Attr{
 		Key: file,

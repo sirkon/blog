@@ -18,9 +18,8 @@ var (
 	txtCtxLogger  *slog.Logger
 	discardLogger *blog.Logger
 
-	blogFile       *os.File
-	txtCtxFile     *os.File
-	benchWriteFile *os.File
+	blogFile   *os.File
+	txtCtxFile *os.File
 )
 
 func TestMain(t *testing.M) {
@@ -36,10 +35,8 @@ func TestMain(t *testing.M) {
 	files = append(files, blogFile)
 	txtCtxFile = createFile("errors_txt.log")
 	files = append(files, txtCtxFile)
-	benchWriteFile = createFile("bench_write.log")
-	files = append(files, benchWriteFile)
 
-	binlog, _ = blog.NewLogger(blog.NewSyncWriter(blogFile))
+	binlog, _ = blog.NewLogger(blog.NewSyncWriter(blogFile), blog.OptionLogFromLevel(blog.LevelDebug))
 	txtCtxLogger = slog.New(slog.NewJSONHandler(txtCtxFile, &slog.HandlerOptions{}))
 	discardLogger, _ = blog.NewLogger(blog.NewSyncWriter(io.Discard))
 
@@ -68,7 +65,7 @@ func BenchmarkTxtContext(b *testing.B) {
 		err = fmt.Errorf("check error count[%d] is-wrap-layer[%v]: %w", 333, true, err)
 		err = fmt.Errorf("context pi[%g] e[%g]: %w", math.Pi, math.E, err)
 
-		txtCtxLogger.Error("failed to do something 1", slog.Any("err", err))
+		txtCtxLogger.Error("failed to do something", slog.Any("err", err))
 	}
 }
 
@@ -85,6 +82,37 @@ func BenchmarkAssembleAndFormattingCost(b *testing.B) {
 			Flt64("e", math.E)
 
 		discardLogger.Error(nil, "failed to do something", blog.Err(err))
+	}
+	blog.NewLogger(blog.NewSyncWriter(blogFile))
+}
+
+func TestLogSize(t *testing.T) {
+	{
+		err := beer.New("this is an error").
+			Bytes("bytes", []byte{1, 2, 3}).
+			Str("text-bytes", "Hello World!")
+		err = beer.Wrap(err, "check error").
+			Int("count", 333).
+			Bool("is-wrap-layer", true)
+		err = beer.Just(err).
+			Flt64("pi", math.Pi).
+			Flt64("e", math.E)
+
+		bsize := &loggerSizeComputer{}
+		binlog, _ := blog.NewLogger(bsize)
+		binlog.Error(nil, "failed to do something", blog.Err(err))
+		t.Log("blog size:", bsize.size)
+	}
+
+	{
+		ssize := &loggerSizeComputer{}
+		sslog := slog.New(slog.NewJSONHandler(ssize, &slog.HandlerOptions{}))
+		err := fmt.Errorf("this is an error bytes[%v] text-bytes[%s]", []byte{1, 2, 3}, "Hello World!")
+		err = fmt.Errorf("check error count[%d] is-wrap-layer[%v]: %w", 333, true, err)
+		err = fmt.Errorf("context pi[%g] e[%g]: %w", math.Pi, math.E, err)
+
+		sslog.Error("failed to do something", slog.Any("err", err))
+		t.Log("text context size:", ssize.size)
 	}
 }
 
@@ -107,10 +135,19 @@ func BenchmarkAssembleCost(b *testing.B) {
 }
 
 func createFile(name string) *os.File {
-	file, err := os.Create(filepath.Join(os.TempDir(), name))
+	file, err := os.Create(filepath.Join(name))
 	if err != nil {
 		panic(beer.Wrap(err, "create file "+name))
 	}
 
 	return file
+}
+
+type loggerSizeComputer struct {
+	size int
+}
+
+func (l *loggerSizeComputer) Write(p []byte) (n int, err error) {
+	l.size += len(p)
+	return len(p), nil
 }
