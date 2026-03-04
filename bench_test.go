@@ -1,6 +1,7 @@
 package blog_test
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -21,6 +22,9 @@ var (
 
 	blogFile   *os.File
 	txtCtxFile *os.File
+	justFile   *os.File
+
+	text = bytes.Repeat([]byte{0}, 256)
 )
 
 func TestMain(t *testing.M) {
@@ -36,6 +40,8 @@ func TestMain(t *testing.M) {
 	files = append(files, blogFile)
 	txtCtxFile = createFile("errors_txt.log")
 	files = append(files, txtCtxFile)
+	justFile = createFile("just.log")
+	files = append(files, justFile)
 
 	binlog, _ = blog.NewLogger(blog.NewSyncWriter(blogFile), blog.OptionLogFromLevel(blog.LevelDebug))
 	txtCtxLogger = slog.New(slog.NewJSONHandler(txtCtxFile, &slog.HandlerOptions{}))
@@ -45,6 +51,7 @@ func TestMain(t *testing.M) {
 }
 
 func BenchmarkBlog(b *testing.B) {
+	b.ReportAllocs()
 	for b.Loop() {
 		err := beer.New("this is an error").
 			Bytes("bytes", []byte{1, 2, 3}).
@@ -61,12 +68,24 @@ func BenchmarkBlog(b *testing.B) {
 }
 
 func BenchmarkTxtContext(b *testing.B) {
+	b.ReportAllocs()
 	for b.Loop() {
 		err := fmt.Errorf("this is an error bytes[%v] text-bytes[%s]", []byte{1, 2, 3}, "Hello World!")
 		err = fmt.Errorf("check error count[%d] is-wrap-layer[%v]: %w", 333, true, err)
 		err = fmt.Errorf("context pi[%g] e[%g]: %w", math.Pi, math.E, err)
 
 		txtCtxLogger.Error("failed to do something", slog.Any("err", err))
+	}
+}
+
+func BenchmarkBlogTxtContext(b *testing.B) {
+	b.ReportAllocs()
+	for b.Loop() {
+		err := fmt.Errorf("this is an error bytes[%v] text-bytes[%s]", []byte{1, 2, 3}, "Hello World!")
+		err = fmt.Errorf("check error count[%d] is-wrap-layer[%v]: %w", 333, true, err)
+		err = fmt.Errorf("context pi[%g] e[%g]: %w", math.Pi, math.E, err)
+
+		binlog.Error(nil, "failed to do something", blog.Err(err))
 	}
 }
 
@@ -105,6 +124,14 @@ func BenchmarkAssembleCost(b *testing.B) {
 	}
 }
 
+func BenchmarkWriteCode(b *testing.B) {
+	for b.Loop() {
+		if _, err := justFile.Write(text); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
 func TestLogSize(t *testing.T) {
 	t.Run("binary log size", func(t *testing.T) {
 		err := beer.New("this is an error").
@@ -117,13 +144,13 @@ func TestLogSize(t *testing.T) {
 			Flt64("pi", math.Pi).
 			Flt64("e", math.E)
 
-		bsize := &loggerSizeComputer{}
+		bsize := loggerSizeComputer("binary log with beer.Error")
 		binlog, _ := blog.NewLogger(bsize)
 		binlog.Error(nil, "failed to do something", blog.Err(err))
 	})
 
 	t.Run("txt log size", func(t *testing.T) {
-		ssize := &loggerSizeComputer{}
+		ssize := loggerSizeComputer("slog with text context")
 		sslog := slog.New(slog.NewJSONHandler(ssize, &slog.HandlerOptions{}))
 		err := fmt.Errorf("this is an error bytes[%v] text-bytes[%s]", []byte{1, 2, 3}, "Hello World!")
 		err = fmt.Errorf("check error count[%d] is-wrap-layer[%v]: %w", 333, true, err)
@@ -133,9 +160,9 @@ func TestLogSize(t *testing.T) {
 	})
 
 	t.Run("check wrap strategies sizes", func(t *testing.T) {
-		binlog, _ := blog.NewLogger(&loggerSizeComputer{})
 
 		t.Run("pure beer", func(t *testing.T) {
+			binlog, _ := blog.NewLogger(loggerSizeComputer("pure beer.Error"))
 			err := beer.New("error")
 			err = beer.Wrap(err, "wrap 1")
 			err = beer.Wrap(err, "wrap 2")
@@ -143,6 +170,7 @@ func TestLogSize(t *testing.T) {
 		})
 
 		t.Run("foreign on the nip", func(t *testing.T) {
+			binlog, _ := blog.NewLogger(loggerSizeComputer("beer.Error with foreign error on the tip"))
 			err := errors.New("error")
 			err = beer.Wrap(err, "wrap 1")
 			err = beer.Wrap(err, "wrap 2")
@@ -150,6 +178,7 @@ func TestLogSize(t *testing.T) {
 		})
 
 		t.Run("foreign wrap", func(t *testing.T) {
+			binlog, _ := blog.NewLogger(loggerSizeComputer("beer.Error and foreign error intermixed"))
 			var err error = beer.New("error")
 			err = beer.Wrap(err, "wrap 1")
 			err = fmt.Errorf("wrap 2: %w", err)
@@ -167,9 +196,9 @@ func createFile(name string) *os.File {
 	return file
 }
 
-type loggerSizeComputer struct{}
+type loggerSizeComputer string
 
-func (l *loggerSizeComputer) Write(p []byte) (n int, err error) {
-	fmt.Println("write size:", len(p))
+func (l loggerSizeComputer) Write(p []byte) (n int, err error) {
+	fmt.Println(string(l), "write size:", len(p))
 	return len(p), nil
 }

@@ -7,6 +7,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/sirkon/blog/beer"
 	"github.com/sirkon/blog/internal/core"
 )
 
@@ -194,6 +195,85 @@ func getFmtErrorfLargerContext() error {
 	return err
 }
 
+func BenchmarkWrapLinearityCheck(b *testing.B) {
+
+	b.Run("10", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			var err error = beer.New("this is an error")
+			err = wrapTens(err, 0)
+			_ = err.(*beer.Error)
+		}
+	})
+
+	b.Run("50", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			var err error = beer.New("this is an error")
+
+			err = wrapTens(err, 0)
+			err = wrapTens(err, 10)
+			err = wrapTens(err, 20)
+			err = wrapTens(err, 30)
+			err = wrapTens(err, 40)
+		}
+	})
+
+	b.Run("100", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			var err error = beer.New("this is an error")
+
+			err = wrapTens(err, 0)
+			err = wrapTens(err, 10)
+			err = wrapTens(err, 20)
+			err = wrapTens(err, 30)
+			err = wrapTens(err, 40)
+			err = wrapTens(err, 50)
+			err = wrapTens(err, 60)
+			err = wrapTens(err, 70)
+			err = wrapTens(err, 80)
+			err = wrapTens(err, 90)
+			_ = err.(*beer.Error)
+		}
+	})
+
+	b.Run("1000", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			var err error = beer.New("this is an error")
+
+			for i := 0; i < 1000; i += 10 {
+				err = wrapTens(err, i)
+			}
+
+			_ = err.(*beer.Error)
+		}
+	})
+}
+
+func wrapTens(err error, start int) error {
+	_ = wraps[start+9]
+
+	err = beer.Wrap(err, wraps[start])
+	err = beer.Wrap(err, wraps[start+1])
+	err = beer.Wrap(err, wraps[start+2])
+	err = beer.Wrap(err, wraps[start+3])
+	err = beer.Wrap(err, wraps[start+4])
+	err = beer.Wrap(err, wraps[start+5])
+	err = beer.Wrap(err, wraps[start+6])
+	err = beer.Wrap(err, wraps[start+7])
+	err = beer.Wrap(err, wraps[start+8])
+	err = beer.Wrap(err, wraps[start+9])
+
+	return err
+}
+
+var wraps []string
+
 func init() {
 	core.InsertLocationsOff()
+	for i := range 1000 {
+		wraps = append(wraps, fmt.Sprintf("wrap %d", i))
+	}
 }

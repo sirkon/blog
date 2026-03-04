@@ -19,7 +19,6 @@ const (
 	ValueKindLocationNode             ValueKind = 6
 	ValueKindForeignErrorText         ValueKind = 7
 	ValueKindForeignErrorFormat       ValueKind = 8
-	ValueKindSerializer               ValueKind = 9
 	ValueKindPhantomContextNode       ValueKind = 10
 
 	// --- Group 2: Payload / base types (32+) ---
@@ -115,8 +114,6 @@ func (k ValueKind) String() string {
 		return "error"
 	case ValueKindError:
 		return "beer.Error"
-	case ValueKindSerializer:
-		return "blog.Serializable"
 	case ValueKindSliceBool:
 		return "[]bool"
 	case ValueKindSliceInt:

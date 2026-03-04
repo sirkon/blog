@@ -196,8 +196,3 @@ func Strs(key string, value []string) Attr {
 func Group(key string, value ...Attr) Attr {
 	return core.Group(key, value...)
 }
-
-// Serial returns an [Attr] for Serializer value.
-func Serial(key string, value Serializer) Attr {
-	return core.Obj(key, value)
-}

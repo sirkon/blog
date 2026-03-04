@@ -503,18 +503,6 @@ func Group(key string, value ...Attr) Attr {
 	}
 }
 
-// Obj returns an [Attr] for Serializer value.
-func Obj(key string, value Serializer) Attr {
-	_ = key[0]
-	return Attr{
-		Key: key,
-		Value: Value{
-			srl: value,
-		},
-		kind: ValueKindSerializer,
-	}
-}
-
 func isPrintableStringWithSpaces(b []byte) bool {
 	for len(b) > 0 {
 		r, size := utf8.DecodeRune(b)

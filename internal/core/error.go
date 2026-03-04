@@ -80,7 +80,7 @@ loop:
 			ValueKindUint, ValueKindUint64,
 			ValueKindFloat64:
 			payload = payload[8:]
-		case ValueKindString, ValueKindBytes, ValueKindSerializer:
+		case ValueKindString, ValueKindBytes:
 			length, varintLength = binary.Uvarint(payload)
 			payload = payload[varintLength+int(length):]
 		case ValueKindSliceBool, ValueKindSliceInt8, ValueKindSliceUint8:
@@ -175,7 +175,7 @@ func SufficientErrorBytes(payload []byte) []byte {
 			ValueKindUint, ValueKindUint64,
 			ValueKindFloat64:
 			payload = payload[8:]
-		case ValueKindString, ValueKindBytes, ValueKindSerializer:
+		case ValueKindString, ValueKindBytes:
 			length, varintLength = binary.Uvarint(payload)
 			payload = payload[varintLength+int(length):]
 		case ValueKindSliceBool, ValueKindSliceInt8, ValueKindSliceUint8:

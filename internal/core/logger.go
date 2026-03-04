@@ -30,7 +30,7 @@ const (
 type Logger struct {
 	w          WriteSyncer
 	bufs       *sync.Pool
-	inProgress uint64
+	inProgress *uint64
 
 	logFrom       LoggingLevel
 	prefixPayload []byte
@@ -40,8 +40,9 @@ type Logger struct {
 // NewLogger creates a new logger writing into the given WriteSyncer.
 func NewLogger(w WriteSyncer, options ...OptionApplier) (*Logger, error) {
 	res := &Logger{
-		w:    w,
-		bufs: &sync.Pool{},
+		w:          w,
+		bufs:       &sync.Pool{},
+		inProgress: new(uint64(0)),
 	}
 	for _, option := range options {
 		if err := option.apply(res); err != nil {
@@ -162,8 +163,6 @@ func LogPanicInfo(v any) Attr {
 		attr = Stg(key, v)
 	case []byte:
 		attr = Bytes(key, v)
-	case Serializer:
-		attr = Obj(key, v)
 	case []bool:
 		attr = Bools(key, v)
 	case []int:
@@ -227,10 +226,7 @@ func (l *Logger) logLevel(
 		return
 	}
 
-	atomic.AddUint64(&l.inProgress, 1)
-	defer func() {
-		atomic.AddUint64(&l.inProgress, ^uint64(0))
-	}()
+	atomic.AddUint64(l.inProgress, 1)
 
 	var logDataPtr *[]byte
 	val := l.bufs.Get()
@@ -244,7 +240,6 @@ func (l *Logger) logLevel(
 	// This uvarint part's length may differ, and we may need an adjustment to pack that header tightly.
 	record := *logDataPtr
 	record = record[0:15]
-	defer l.putBufferBack(logDataPtr)
 
 	// Now, put fields.
 
@@ -298,19 +293,28 @@ func (l *Logger) logLevel(
 	if _, err := l.w.Write(data); err != nil {
 		fmt.Printf("failed to write logged data %v: %s\n", data, err)
 	}
+	atomic.AddUint64(l.inProgress, ^uint64(0))
+	l.putBufferBack(logDataPtr, data)
 }
 
-func (l *Logger) putBufferBack(buf *[]byte) {
-	if len(*buf) > wishRecordIsNoLongerThan {
+func (l *Logger) putBufferBack(origPrt *[]byte, data []byte) {
+	orig := *origPrt
+	dataHead := uintptr(unsafe.Pointer(unsafe.SliceData(data)))
+	origHead := uintptr(unsafe.Pointer(unsafe.SliceData(orig)))
+	if dataHead < origHead || dataHead >= origHead+uintptr(cap(orig)) {
+		orig = data
+	}
+
+	if len(orig) > wishRecordIsNoLongerThan {
 		// The buffer grew too large, we better not to keep it.
 		return
 	}
-	if atomic.LoadUint64(&l.inProgress) > recordBufferMaxCapacity {
+	if atomic.LoadUint64(l.inProgress) > recordBufferMaxCapacity {
 		// Having recordBufferMaxCapacity pool is enough,
 		return
 	}
-	*buf = (*buf)[:0]
-	l.bufs.Put(buf)
+	orig = orig[:0]
+	l.bufs.Put(&orig)
 }
 
 // LoggingLevel represents logging levels.
