@@ -124,7 +124,7 @@ func BenchmarkAssembleCost(b *testing.B) {
 	}
 }
 
-func BenchmarkWriteCode(b *testing.B) {
+func BenchmarkWriteCost(b *testing.B) {
 	for b.Loop() {
 		if _, err := justFile.Write(text); err != nil {
 			b.Fatal(err)
