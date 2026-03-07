@@ -14,7 +14,7 @@ type Error struct {
 	wrap       error
 	text       string
 	sufficient bool
-	specs      *marker
+	specs      *specNode
 }
 
 func (e *Error) Error() string {

@@ -32,3 +32,20 @@ func Wrapf(err error, format string, a ...any) *Error {
 func Just(err error) *Error {
 	return core.JustError(err)
 }
+
+// Spec adds a typed *specialization* into the err. This is meant to be used for domain
+// specific errors. Custom types are less than desired with blog/beer since they lack
+// context handling and propagation support [beer.Error] has.
+func Spec(err error, spec any) *Error {
+	return core.Spec(err, spec)
+}
+
+// AsSpec returned previously stored spec from the error.
+func AsSpec[T any](err error) (T, bool) {
+	return core.AsSpec[T](err)
+}
+
+// IsSpec checks if the given spec was added into err.
+func IsSpec[T any](err error) bool {
+	return core.IsSpec[T](err)
+}

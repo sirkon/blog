@@ -2,12 +2,13 @@ package core
 
 import (
 	"errors"
+	"reflect"
 )
 
-// marker adds a mark of given type to an error.
-type marker struct {
+// specNode adds a mark of given type to an error.
+type specNode struct {
 	spec any
-	next *marker
+	next *specNode
 }
 
 // Spec puts a tag on the error. These things are meant to be used
@@ -18,7 +19,7 @@ type marker struct {
 // too, with all this error context stuff and blazing fast logging.
 func Spec(err error, spec any) *Error {
 	if e, ok := err.(*Error); ok {
-		e.specs = &marker{
+		e.specs = &specNode{
 			spec: spec,
 			next: e.specs,
 		}
@@ -29,7 +30,7 @@ func Spec(err error, spec any) *Error {
 			payload:    e.payload,
 			wrap:       err,
 			sufficient: false,
-			specs:      &marker{spec: spec},
+			specs:      &specNode{spec: spec},
 		}
 		wrapAttr := ErrorNodePhantomContext()
 		res.payload = AppendSerialized(res.payload, wrapAttr)
@@ -40,7 +41,7 @@ func Spec(err error, spec any) *Error {
 		payload:    make([]byte, 0, defaultPayloadSize),
 		wrap:       err,
 		sufficient: true,
-		specs: &marker{
+		specs: &specNode{
 			spec: spec,
 		},
 	}
@@ -85,6 +86,8 @@ func AsSpec[T any](err error) (T, bool) {
 }
 
 func IsSpec[T any](err error) bool {
+	target := reflect.TypeFor[T]()
+
 	for {
 		e, ok := err.(*Error)
 		if !ok {
@@ -94,13 +97,10 @@ func IsSpec[T any](err error) bool {
 			return false
 		}
 
-		spec := e.specs
-		for spec != nil {
-			if _, ok := spec.spec.(T); ok {
+		for spec := e.specs; spec != nil; spec = spec.next {
+			if reflect.TypeOf(spec.spec) == target {
 				return true
 			}
-
-			spec = spec.next
 		}
 
 		if e.wrap != nil {
