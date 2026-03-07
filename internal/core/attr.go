@@ -10,17 +10,17 @@ import (
 	"unsafe"
 )
 
-// Attr a key-value pair for logging context.
+// Attr a key-spec pair for logging context.
 type Attr struct {
 	Key   string
 	Value Value
 	kind  ValueKind
 }
 
-// Kind returns value of kind.
+// Kind returns spec of kind.
 func (a Attr) Kind() ValueKind { return a.kind }
 
-// Bool returns an [Attr] for boolean value.
+// Bool returns an [Attr] for boolean spec.
 func Bool(key string, value bool) Attr {
 	_ = key[0]
 	var v uint64
@@ -60,7 +60,7 @@ func Duration(key string, value time.Duration) Attr {
 	}
 }
 
-// Int returns an [Attr] for int value.
+// Int returns an [Attr] for int spec.
 func Int(key string, value int) Attr {
 	_ = key[0]
 	return Attr{
@@ -72,7 +72,7 @@ func Int(key string, value int) Attr {
 	}
 }
 
-// Int8 returns an [Attr] for int8 value.
+// Int8 returns an [Attr] for int8 spec.
 func Int8(key string, value int8) Attr {
 	_ = key[0]
 	return Attr{
@@ -84,7 +84,7 @@ func Int8(key string, value int8) Attr {
 	}
 }
 
-// Int16 returns an [Attr] for int16 value.
+// Int16 returns an [Attr] for int16 spec.
 func Int16(key string, value int16) Attr {
 	_ = key[0]
 	return Attr{
@@ -96,7 +96,7 @@ func Int16(key string, value int16) Attr {
 	}
 }
 
-// Int32 returns an [Attr] for int32 value.
+// Int32 returns an [Attr] for int32 spec.
 func Int32(key string, value int32) Attr {
 	_ = key[0]
 	return Attr{
@@ -108,7 +108,7 @@ func Int32(key string, value int32) Attr {
 	}
 }
 
-// Int64 returns an [Attr] for int64 value.
+// Int64 returns an [Attr] for int64 spec.
 func Int64(key string, value int64) Attr {
 	_ = key[0]
 	return Attr{
@@ -120,7 +120,7 @@ func Int64(key string, value int64) Attr {
 	}
 }
 
-// Uint returns an [Attr] for uint value.
+// Uint returns an [Attr] for uint spec.
 func Uint(key string, value uint) Attr {
 	_ = key[0]
 	return Attr{
@@ -132,7 +132,7 @@ func Uint(key string, value uint) Attr {
 	}
 }
 
-// Uint8 returns an [Attr] for uint8 value.
+// Uint8 returns an [Attr] for uint8 spec.
 func Uint8(key string, value uint8) Attr {
 	_ = key[0]
 	return Attr{
@@ -144,7 +144,7 @@ func Uint8(key string, value uint8) Attr {
 	}
 }
 
-// Uint16 returns an [Attr] for uint16 value.
+// Uint16 returns an [Attr] for uint16 spec.
 func Uint16(key string, value uint16) Attr {
 	_ = key[0]
 	return Attr{
@@ -156,7 +156,7 @@ func Uint16(key string, value uint16) Attr {
 	}
 }
 
-// Uint32 returns an [Attr] for uint32 value.
+// Uint32 returns an [Attr] for uint32 spec.
 func Uint32(key string, value uint32) Attr {
 	_ = key[0]
 	return Attr{
@@ -168,7 +168,7 @@ func Uint32(key string, value uint32) Attr {
 	}
 }
 
-// Uint64 returns an [Attr] for uint64 value.
+// Uint64 returns an [Attr] for uint64 spec.
 func Uint64(key string, value uint64) Attr {
 	_ = key[0]
 	return Attr{
@@ -180,7 +180,7 @@ func Uint64(key string, value uint64) Attr {
 	}
 }
 
-// Flt32 returns an [Attr] for float32 value.
+// Flt32 returns an [Attr] for float32 spec.
 func Flt32(key string, value float32) Attr {
 	_ = key[0]
 	return Attr{
@@ -192,7 +192,7 @@ func Flt32(key string, value float32) Attr {
 	}
 }
 
-// Flt64 returns an [Attr] for float64 value.
+// Flt64 returns an [Attr] for float64 spec.
 func Flt64(key string, value float64) Attr {
 	_ = key[0]
 	return Attr{
@@ -204,7 +204,7 @@ func Flt64(key string, value float64) Attr {
 	}
 }
 
-// Str returns an [Attr] for string value.
+// Str returns an [Attr] for string spec.
 func Str(key string, value string) Attr {
 	_ = key[0]
 	return Attr{
@@ -217,7 +217,7 @@ func Str(key string, value string) Attr {
 	}
 }
 
-// Stg returns an [Attr] for [fmt.Stringer] value packed as just a string.
+// Stg returns an [Attr] for [fmt.Stringer] spec packed as just a string.
 func Stg(key string, value fmt.Stringer) Attr {
 	_ = key[0]
 	val := value.String()
@@ -232,7 +232,7 @@ func Stg(key string, value fmt.Stringer) Attr {
 	}
 }
 
-// Bytes returns an [Attr] for []byte value.
+// Bytes returns an [Attr] for []byte spec.
 func Bytes(key string, value []byte) Attr {
 	_ = key[0]
 	var kind ValueKind
@@ -255,7 +255,7 @@ func Bytes(key string, value []byte) Attr {
 	}
 }
 
-// ErrorAttr returns an [Attr] for error value packed as just a string.
+// ErrorAttr returns an [Attr] for error spec packed as just a string.
 func ErrorAttr(key string, err error) Attr {
 	_ = key[0]
 	e, ok := err.(*Error)
@@ -308,7 +308,7 @@ func Err(err error) Attr {
 	return ErrorAttr("err", err)
 }
 
-// Bools returns an [Attr] for []bool value.
+// Bools returns an [Attr] for []bool spec.
 func Bools(key string, value []bool) Attr {
 	_ = key[0]
 	return Attr{
@@ -321,7 +321,7 @@ func Bools(key string, value []bool) Attr {
 	}
 }
 
-// Ints returns an [Attr] for []int value.
+// Ints returns an [Attr] for []int spec.
 func Ints(key string, value []int) Attr {
 	_ = key[0]
 	return Attr{
@@ -334,7 +334,7 @@ func Ints(key string, value []int) Attr {
 	}
 }
 
-// Int8s returns an [Attr] for []int8 value.
+// Int8s returns an [Attr] for []int8 spec.
 func Int8s(key string, value []int8) Attr {
 	_ = key[0]
 	return Attr{
@@ -347,7 +347,7 @@ func Int8s(key string, value []int8) Attr {
 	}
 }
 
-// Int16s returns an [Attr] for []int16 value.
+// Int16s returns an [Attr] for []int16 spec.
 func Int16s(key string, value []int16) Attr {
 	_ = key[0]
 	return Attr{
@@ -360,7 +360,7 @@ func Int16s(key string, value []int16) Attr {
 	}
 }
 
-// Int32s returns an [Attr] for []int32 value.
+// Int32s returns an [Attr] for []int32 spec.
 func Int32s(key string, value []int32) Attr {
 	_ = key[0]
 	return Attr{
@@ -373,7 +373,7 @@ func Int32s(key string, value []int32) Attr {
 	}
 }
 
-// Int64s returns an [Attr] for []int64 value.
+// Int64s returns an [Attr] for []int64 spec.
 func Int64s(key string, value []int64) Attr {
 	_ = key[0]
 	return Attr{
@@ -386,7 +386,7 @@ func Int64s(key string, value []int64) Attr {
 	}
 }
 
-// Uints returns an [Attr] for []uint value.
+// Uints returns an [Attr] for []uint spec.
 func Uints(key string, value []uint) Attr {
 	_ = key[0]
 	return Attr{
@@ -399,7 +399,7 @@ func Uints(key string, value []uint) Attr {
 	}
 }
 
-// Uint8s returns an [Attr] for []uint8 value.
+// Uint8s returns an [Attr] for []uint8 spec.
 func Uint8s(key string, value []uint8) Attr {
 	_ = key[0]
 	return Attr{
@@ -412,7 +412,7 @@ func Uint8s(key string, value []uint8) Attr {
 	}
 }
 
-// Uint16s returns an [Attr] for []uint16 value.
+// Uint16s returns an [Attr] for []uint16 spec.
 func Uint16s(key string, value []uint16) Attr {
 	_ = key[0]
 	return Attr{
@@ -425,7 +425,7 @@ func Uint16s(key string, value []uint16) Attr {
 	}
 }
 
-// Uint32s returns an [Attr] for []uint32 value.
+// Uint32s returns an [Attr] for []uint32 spec.
 func Uint32s(key string, value []uint32) Attr {
 	_ = key[0]
 	return Attr{
@@ -438,7 +438,7 @@ func Uint32s(key string, value []uint32) Attr {
 	}
 }
 
-// Uint64s returns an [Attr] for []uint64 value.
+// Uint64s returns an [Attr] for []uint64 spec.
 func Uint64s(key string, value []uint64) Attr {
 	_ = key[0]
 	return Attr{
@@ -451,7 +451,7 @@ func Uint64s(key string, value []uint64) Attr {
 	}
 }
 
-// Flt32s returns an [Attr] for []float32 value.
+// Flt32s returns an [Attr] for []float32 spec.
 func Flt32s(key string, value []float32) Attr {
 	_ = key[0]
 	return Attr{
@@ -464,7 +464,7 @@ func Flt32s(key string, value []float32) Attr {
 	}
 }
 
-// Flt64s returns an [Attr] for []float64 value.
+// Flt64s returns an [Attr] for []float64 spec.
 func Flt64s(key string, value []float64) Attr {
 	_ = key[0]
 	return Attr{
@@ -477,7 +477,7 @@ func Flt64s(key string, value []float64) Attr {
 	}
 }
 
-// Strs returns an [Attr] for []string value.
+// Strs returns an [Attr] for []string spec.
 func Strs(key string, value []string) Attr {
 	_ = key[0]
 	return Attr{
@@ -490,7 +490,7 @@ func Strs(key string, value []string) Attr {
 	}
 }
 
-// Group returns an [Attr] for []Attr value.
+// Group returns an [Attr] for []Attr spec.
 func Group(key string, value ...Attr) Attr {
 	_ = key[0]
 	return Attr{

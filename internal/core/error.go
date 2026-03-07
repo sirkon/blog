@@ -14,6 +14,7 @@ type Error struct {
 	wrap       error
 	text       string
 	sufficient bool
+	specs      *marker
 }
 
 func (e *Error) Error() string {
@@ -61,6 +62,11 @@ loop:
 				nodes = append(nodes, key)
 			} else {
 				nodes = append(nodes, key)
+			}
+		case ValueKindPhantomContextNode:
+			if !e.sufficient {
+				nodes = append(nodes, nil)
+				strInsert = e.wrap.Error()
 			}
 		case ValueKindForeignErrorText:
 			nodes = append(nodes, key)

@@ -31,6 +31,7 @@ func wrapError(err error, msg string) *Error {
 				payload:    e.payload,
 				wrap:       err,
 				sufficient: false,
+				specs:      e.specs,
 			}
 		} else {
 			// We got an error that is totally outside of ours and we can just push it into a payload

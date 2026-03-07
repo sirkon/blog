@@ -145,13 +145,13 @@ func (k ValueKind) String() string {
 	case ValueKindGroup:
 		return "blog.Group"
 	default:
-		return fmt.Sprintf("value-kind-unknown[%d]", k)
+		return fmt.Sprintf("spec-kind-unknown[%d]", k)
 	}
 }
 
 // PredefinedKeys keys can be set via the extension of kind in the
 // higher 7 bytes of uint64. That extended bytes keep an index of
-// the key value in this slice.
+// the key spec in this slice.
 var PredefinedKeys []string = []string{
 	"user-id",
 }

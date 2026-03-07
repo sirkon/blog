@@ -4,21 +4,21 @@ package core
 //
 // Quote:
 //
-//	 // A Value can represent any Go value, but unlike type any,
+//	 // A Value can represent any Go spec, but unlike type any,
 //	 // it can represent most small values without an allocation.
 //	 // The zero Value corresponds to nil.
 //	 type Value struct {
 //		    _ [0]func() // disallow ==
-//		    // num holds the value for Kinds Int64, Uint64, Flt64, Bool and Duration,
+//		    // num holds the spec for Kinds Int64, Uint64, Flt64, Bool and Duration,
 //		    // the string length for KindString, and nanoseconds since the epoch for KindTime.
 //		    num uint64
-//		    // If any is of type Kind, then the value is in num as described above.
-//		    // If any is of type *time.Location, then the Kind is Time and time.Time value
+//		    // If any is of type Kind, then the spec is in num as described above.
+//		    // If any is of type *time.Location, then the Kind is Time and time.Time spec
 //		    // can be constructed from the Unix nanos in num and the location (monotonic time
 //		    // is not preserved).
-//		    // If any is of type stringptr, then the Kind is Str and the string value
+//		    // If any is of type stringptr, then the Kind is Str and the string spec
 //		    // consists of the length in num and the pointer in any.
-//		    // Otherwise, the Kind is Any and any is the value.
+//		    // Otherwise, the Kind is Any and any is the spec.
 //		    // (This implies that Attrs cannot store values of type Kind, *time.Location
 //		    // or stringptr.)
 //		    any any

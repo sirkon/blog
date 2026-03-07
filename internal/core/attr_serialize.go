@@ -31,7 +31,7 @@ func AppendSerialized(src []byte, attr Attr) []byte {
 		src = binary.AppendUvarint(src, uint64(knownKey))
 	}
 
-	// Append core value. Will not write anything if this is an unsupported value.
+	// Append core spec. Will not write anything if this is an unsupported spec.
 	switch kind {
 	case ValueKindLocationNode:
 		src = binary.AppendUvarint(src, attr.Value.num)
