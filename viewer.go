@@ -42,6 +42,9 @@ func RecordSafeView(cons RecordConsumer, data []byte) error {
 	data = data[varintLength:]
 
 	// So, we have a record content in our hands.
+	_ = binary.LittleEndian.Uint16(data)
+	data = data[2:]
+
 	tim := binary.LittleEndian.Uint64(data)
 	cons.SetTime(tim)
 	cons.SetLevel(core.LoggingLevel(data[8]))

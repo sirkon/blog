@@ -23,6 +23,8 @@ const (
 	// We tries not to keep too much.
 	wishRecordIsNoLongerThan = 64 * 1024
 	recordBufferMaxCapacity  = 65536
+
+	Version uint16 = 1
 )
 
 // Logger records and serialize information about each call to its
@@ -243,6 +245,9 @@ func (l *Logger) logLevel(
 
 	// Now, put fields.
 
+	// Version
+	record = binary.LittleEndian.AppendUint16(record, Version)
+
 	// Time.
 	record = binary.LittleEndian.AppendUint64(record, uint64(time.Now().UnixNano()))
 
@@ -280,12 +285,12 @@ func (l *Logger) logLevel(
 	}
 
 	// Get CRC32, adjust the placement, put header and form a data to write.
-	checksum := crc32.Checksum(record, crcTable)
-	width := 5 + (bits.Len64(uint64(len(record)))+6)/7 // 0xFF + CRC + UVARINT(record.length)
+	checksum := crc32.Checksum(record[15:], crcTable)
+	width := 5 + (bits.Len64(uint64(len(record)-15))+6)/7 // 0xFF + CRC + UVARINT(record.length)
 	data := record[15-width : 15-width]
 	data = append(data, 0xff)
 	data = binary.LittleEndian.AppendUint32(data, checksum)
-	data = binary.AppendUvarint(data, uint64(len(record)))
+	data = binary.AppendUvarint(data, uint64(len(record)-15))
 	data = data[:width+len(record)-15]
 	*logDataPtr = data
 

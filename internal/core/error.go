@@ -37,6 +37,12 @@ loop:
 		switch kind {
 		case ValueKindJustContextNode:
 			continue
+		case ValueKindPhantomContextNode:
+			if !e.sufficient {
+				nodes = append(nodes, nil)
+				strInsert = e.wrap.Error()
+			}
+			continue
 		case ValueKindJustContextInheritedNode:
 			if !e.sufficient {
 				nodes = append(nodes, nil)
@@ -62,11 +68,6 @@ loop:
 				nodes = append(nodes, key)
 			} else {
 				nodes = append(nodes, key)
-			}
-		case ValueKindPhantomContextNode:
-			if !e.sufficient {
-				nodes = append(nodes, nil)
-				strInsert = e.wrap.Error()
 			}
 		case ValueKindForeignErrorText:
 			nodes = append(nodes, key)
@@ -141,7 +142,7 @@ func SufficientErrorBytes(payload []byte) []byte {
 		kind := ValueKind(payload[0])
 		payload = payload[1:]
 		switch kind {
-		case ValueKindJustContextNode:
+		case ValueKindJustContextNode, ValueKindPhantomContextNode:
 			continue
 		case ValueKindJustContextInheritedNode:
 			break

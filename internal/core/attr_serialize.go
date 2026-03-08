@@ -15,7 +15,7 @@ func AppendSerialized(src []byte, attr Attr) []byte {
 	src = append(src, byte(kind))
 
 	switch attr.kind {
-	case ValueKindJustContextNode, ValueKindJustContextInheritedNode:
+	case ValueKindJustContextNode, ValueKindJustContextInheritedNode, ValueKindPhantomContextNode:
 		return src
 	}
 

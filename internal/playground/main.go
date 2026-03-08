@@ -15,7 +15,8 @@ import (
 
 func main() {
 	log, err := core.NewLogger(
-		blog.NewViewWriteSyncer(blog.NewHumanView(), os.Stdout),
+		blog.NewJSONViewer(os.Stdout),
+		//blog.NewViewWriteSyncer(blog.NewHumanView(), os.Stdout),
 		//core.OptionLogLocations(),
 	)
 	if err != nil {
@@ -51,5 +52,9 @@ func main() {
 		blog.Err(err),
 	)
 
-	log.Debug(nil, "log", blog.Err(io.EOF))
+	log.Debug(
+		nil,
+		"log",
+		blog.Err(io.EOF),
+	)
 }

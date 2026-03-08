@@ -76,6 +76,24 @@ const (
 
 func (k ValueKind) String() string {
 	switch k {
+	case ValueKindNewNode:
+		return "NewNode"
+	case ValueKindWrapNode:
+		return "WrapNode"
+	case ValueKindWrapInheritedNode:
+		return "WrapInheritedNode"
+	case ValueKindJustContextNode:
+		return "JustContextNode"
+	case ValueKindJustContextInheritedNode:
+		return "JustContextInheritedNode"
+	case ValueKindLocationNode:
+		return "LocationNode"
+	case ValueKindForeignErrorText:
+		return "ForeignErrorText"
+	case ValueKindForeignErrorFormat:
+		return "ForeignErrorFormat"
+	case ValueKindPhantomContextNode:
+		return "PhantomContextNode"
 	case ValueKindBool:
 		return "bool"
 	case ValueKindTime:
@@ -114,6 +132,8 @@ func (k ValueKind) String() string {
 		return "error"
 	case ValueKindError:
 		return "beer.Error"
+	case ValueKindErrorEmbed:
+		return "ForeignWrap(beef.Error)"
 	case ValueKindSliceBool:
 		return "[]bool"
 	case ValueKindSliceInt:
@@ -152,6 +172,6 @@ func (k ValueKind) String() string {
 // PredefinedKeys keys can be set via the extension of kind in the
 // higher 7 bytes of uint64. That extended bytes keep an index of
 // the key spec in this slice.
-var PredefinedKeys []string = []string{
+var PredefinedKeys = []string{
 	"user-id",
 }
