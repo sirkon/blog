@@ -1,0 +1,47 @@
+//go:build arm64
+
+package blog
+
+import (
+	"math/bits"
+	"unsafe"
+)
+
+func (t *packedTree) unpackKey(node *prettyViewObjNode) string {
+	if node.key<<56 != 0 {
+		// Short key.
+		length := 8 - bits.LeadingZeros64(node.key)/8
+		return unsafe.String((*byte)(unsafe.Pointer(&node.key)), length)
+	}
+
+	// long key
+	off := node.key >> 32
+	length := node.key << 32 >> 40
+	ptr := (*byte)(unsafe.Add(unsafe.Pointer(unsafe.SliceData(t.data)), off))
+	return unsafe.String(ptr, length)
+}
+
+func unpackShortStringValue(n *prettyViewObjNode, shortPlaceholder *uint64, longPlaceholder [16]byte) []byte {
+	if n.kind>>8 == 0 {
+		return nil
+	}
+
+	length := n.kind << 56 >> 61
+	if length != 0 {
+		// The string is up to 7 bytes log placed in the kind.
+		*shortPlaceholder = uint64(n.kind >> 8)
+		return unsafe.Slice((*byte)(unsafe.Pointer(shortPlaceholder)), length)
+	}
+
+	// 8, 9, 10 bytes long string.
+	length = n.kind << 48 >> 56
+	if length > 10 {
+		return []byte("!INVALID-DATA")
+	}
+
+	header := uint64(n.kind>>16) | (uint64(n.misc) << 48)
+	base := unsafe.Pointer(&longPlaceholder[0])
+	*(*uint64)(base) = header
+	*(*uint64)(unsafe.Add(base, 8)) = uint64(n.misc) >> 16
+	return longPlaceholder[:length]
+}

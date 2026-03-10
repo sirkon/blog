@@ -3,7 +3,9 @@ package core_test
 import (
 	"fmt"
 	"io"
+	"testing"
 
+	"github.com/sirkon/blog/beer"
 	"github.com/sirkon/blog/internal/core"
 )
 
@@ -46,4 +48,19 @@ func ExampleWrapError() {
 	// trivial: check error 3: check error 2: check error 1: error
 	// typical: check error 3: check error 2: check error 1: root check: EOF
 	// complex: check error 3: check error 2: check error 1: root check: EOF
+}
+
+func TestRegression(t *testing.T) {
+	var err error
+	err = core.WrapError(io.EOF, "wrap 1").Str("tag", "tag1")
+	err = core.JustError(err).Int("key", 12)
+	err = core.WrapError(err, "wrap 2").Bool("bool", true)
+	err = fmt.Errorf("foreign wrap 1: %w", err)
+	err = beer.Wrap(err, "wrap 3").Str("tag", `"quoted tag value"`)
+	err = fmt.Errorf("foreign wrap 2: %w", err)
+
+	expected := "foreign wrap 2: wrap 3: foreign wrap 1: wrap 2: wrap 1: EOF"
+	if err.Error() != expected {
+		t.Errorf("wrong error message: expected %q, got %q", expected, err.Error())
+	}
 }

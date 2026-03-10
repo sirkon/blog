@@ -119,7 +119,7 @@ func LogPanic(ctx context.Context, log *Logger, stacktrace []byte, info Attr) {
 	}
 
 	log.logLevel(
-		ctx, loggingLevelPanic,
+		ctx, LoggingLevelPanic,
 		unsafe.String(unsafe.SliceData(gzipped.Bytes()), gzipped.Len()),
 		info,
 	)
@@ -207,7 +207,7 @@ func LogPanicInfo(v any) Attr {
 //   - ----------------------
 //   - Time (8 bytes)
 //   - Level (1 byte)
-//   - Location, either just 0 or UVARINT(len(file_name)) | file_name | UVARINT(LINE)
+//   - ErrorStageLocation, either just 0 or UVARINT(len(file_name)) | file_name | UVARINT(LINE)
 //   - Some custom payload provided by [Logger.appendCustom] method.
 //   - Message UVARINT(len(message)) | message
 //   - Payload built with [Logger.With].
@@ -254,7 +254,7 @@ func (l *Logger) logLevel(
 	// Level.
 	record = append(record, byte(level))
 
-	// Location if needed. Will just put 0 if not needed. Will be uvarint(file) | uvarint(line) otherwise.
+	// ErrorStageLocation if needed. Will just put 0 if not needed. Will be uvarint(file) | uvarint(line) otherwise.
 	if !l.logLocations {
 		record = append(record, 0)
 	} else {
@@ -338,7 +338,7 @@ const (
 	LoggingLevelWarning LoggingLevel = 40
 	// LoggingLevelError represents Error logging level.
 	LoggingLevelError LoggingLevel = 50
-	loggingLevelPanic LoggingLevel = 60
+	LoggingLevelPanic LoggingLevel = 60
 )
 
 func (l LoggingLevel) String() string {
@@ -353,7 +353,7 @@ func (l LoggingLevel) String() string {
 		return "WARN"
 	case LoggingLevelError:
 		return "ERROR"
-	case loggingLevelPanic:
+	case LoggingLevelPanic:
 		return "PANIC"
 	default:
 		return fmt.Sprintf("logging-level-unknown[%d]", uint8(l))

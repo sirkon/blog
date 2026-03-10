@@ -71,10 +71,9 @@ type RecordContextVisitor interface {
 
 	EnterError(key []byte)
 	EnterErrorStage(state ErrorProcessingStage, text []byte)
+	ErrorStageLocation(file []byte, line int)
 	LeaveErrorStage()
 	LeaveError(text []byte)
-
-	Location(file []byte, line int)
 
 	Finish()
 }
@@ -151,6 +150,7 @@ func ProcessRecord(line []byte, viewer RecordViewer) (err error) {
 }
 
 type payloadDeconstructor struct {
+	hasErrors            bool
 	someErrorStagePassed bool
 	errText              [][]byte
 	errTextLen           int
@@ -245,7 +245,7 @@ func (d *payloadDeconstructor) deconstructPayloadNodeValue(
 	case ValueKindLocationNode:
 		var line int
 		line, payload = mustReadUvarint(payload)
-		visitor.Location(key, line)
+		visitor.ErrorStageLocation(key, line)
 	case ValueKindForeignErrorText:
 		if d.errTextInProgress {
 			d.errText = append(d.errText, key)
@@ -321,8 +321,10 @@ func (d *payloadDeconstructor) deconstructPayloadNodeValue(
 		var v []byte
 		v, payload = mustReadString(payload)
 		switch kind {
-		case ValueKindBytes, ValueKindSliceUint8:
+		case ValueKindBytes:
 			visitor.Bytes(key, v)
+		case ValueKindSliceUint8:
+			visitor.Uint8Slice(key, v)
 		case ValueKindSliceInt8:
 			visitor.Int8Slice(key, unsafe.Slice((*int8)(unsafe.Pointer(&v[0])), len(v)))
 		}

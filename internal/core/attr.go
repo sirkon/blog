@@ -330,7 +330,7 @@ func Ints(key string, value []int) Attr {
 			num: uint64(len(value)),
 			srl: (*intSlicePtr)(unsafe.Pointer(unsafe.SliceData(value))),
 		},
-		kind: ValueKindSliceInt8,
+		kind: ValueKindSliceInt,
 	}
 }
 

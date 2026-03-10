@@ -68,14 +68,16 @@ const (
 
 	ValueKindMax ValueKind = 255
 
-	ValueKnownUserID = 1 + 1<<8
+	ValueErrorContext       = 1 + 1<<8
+	ValueErrorText          = 2 + 1<<8
+	ValueErrorStageLocation = 3 + 1<<8
 
 	// There're ValueKind values at 257 and further to represent [Attr] with predefined keys, where their
 	// lowest byte represents a kind and the upper 7 bytes refer a key index.
 )
 
 func (k ValueKind) String() string {
-	switch k {
+	switch k & 0xFF {
 	case ValueKindNewNode:
 		return "NewNode"
 	case ValueKindWrapNode:
@@ -165,7 +167,15 @@ func (k ValueKind) String() string {
 	case ValueKindGroup:
 		return "blog.Group"
 	default:
-		return fmt.Sprintf("spec-kind-unknown[%d]", k)
+		// Probably a predefined thing?
+		switch k >> 8 {
+		case ValueErrorContext:
+		case ValueErrorText:
+		case ValueErrorStageLocation:
+		default:
+			return fmt.Sprintf("spec-kind-unknown[%d]", k)
+		}
+		return PredefinedKeys[k>>8]
 	}
 }
 
@@ -173,5 +183,7 @@ func (k ValueKind) String() string {
 // higher 7 bytes of uint64. That extended bytes keep an index of
 // the key spec in this slice.
 var PredefinedKeys = []string{
-	"user-id",
+	"@context",
+	"@text",
+	"@location",
 }

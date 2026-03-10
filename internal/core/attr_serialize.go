@@ -7,6 +7,7 @@ import (
 )
 
 const serializeDefaultSize = 256
+const maxKeyLimit = 16 * 1024 * 1024
 
 // AppendSerialized serialize attr appending data to the src.
 func AppendSerialized(src []byte, attr Attr) []byte {
@@ -19,12 +20,16 @@ func AppendSerialized(src []byte, attr Attr) []byte {
 		return src
 	}
 
-	// Кладем ключ.
+	// Save a key.
 	knownKey := attr.kind >> 8
 	if knownKey == 0 {
 		// String key.
-		src = binary.AppendUvarint(src, uint64(len(attr.Key)))
-		src = append(src, attr.Key...)
+		key := attr.Key
+		if len(key) > maxKeyLimit {
+			key = key[:maxKeyLimit]
+		}
+		src = binary.AppendUvarint(src, uint64(len(key)))
+		src = append(src, key...)
 	} else {
 		// Known registered key.
 		src = append(src, 0)

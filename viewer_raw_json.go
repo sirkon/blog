@@ -1,7 +1,7 @@
 package blog
 
 import (
-	"fmt"
+	"encoding/base64"
 	"io"
 	"strconv"
 	"time"
@@ -10,19 +10,19 @@ import (
 	"github.com/sirkon/blog/internal/core"
 )
 
-type GeneralJSONWriter struct {
+type RawJSONWriter struct {
 	w    io.Writer
-	view *RecordView
+	view *JSONRecordView
 }
 
-func NewJSONViewer(w io.Writer) *GeneralJSONWriter {
-	return &GeneralJSONWriter{
+func NewRawJSONWriter(w io.Writer) *RawJSONWriter {
+	return &RawJSONWriter{
 		w:    w,
-		view: &RecordView{},
+		view: &JSONRecordView{},
 	}
 }
 
-func (g *GeneralJSONWriter) Write(p []byte) (n int, err error) {
+func (g *RawJSONWriter) Write(p []byte) (n int, err error) {
 	g.view.Reset()
 	if err := core.ProcessRecord(p, g.view); err != nil {
 		return 0, core.WrapError(err, "process record")
@@ -30,37 +30,37 @@ func (g *GeneralJSONWriter) Write(p []byte) (n int, err error) {
 	g.view.data = append(g.view.data, '}')
 	n, err = g.w.Write(append(g.view.data, '\n'))
 	if err != nil {
-		return n, core.WrapError(err, "write processed data")
+		return n, core.WrapError(err, "write processed arena")
 	}
 
 	return n, nil
 }
 
-type RecordView struct {
+type JSONRecordView struct {
 	errPos []int
 
 	data []byte
 }
 
-func (v *RecordView) Reset() {
+func (v *JSONRecordView) Reset() {
 	v.errPos = v.errPos[:0]
 	v.data = v.data[:0]
 	v.data = append(v.data, '{')
 }
 
-func (v *RecordView) Time(t time.Time) {
+func (v *JSONRecordView) Time(t time.Time) {
 	v.data = append(v.data, `"time":"`...)
 	v.data = append(v.data, t.Format(time.RFC3339Nano)...)
 	v.data = append(v.data, '"')
 }
 
-func (v *RecordView) Level(level core.LoggingLevel) {
+func (v *JSONRecordView) Level(level core.LoggingLevel) {
 	v.data = append(v.data, `,"level":"`...)
 	v.data = append(v.data, level.String()...)
 	v.data = append(v.data, '"')
 }
 
-func (v *RecordView) Location(file []byte, line int) {
+func (v *JSONRecordView) Location(file []byte, line int) {
 	v.data = append(v.data, `,"location":`...)
 	v.data = strconv.AppendQuote(v.data, unsafe.String(unsafe.SliceData(file), len(file)))
 	v.data = v.data[:len(v.data)-1]
@@ -69,32 +69,32 @@ func (v *RecordView) Location(file []byte, line int) {
 	v.data = append(v.data, '"')
 }
 
-func (v *RecordView) Message(bytes []byte) {
+func (v *JSONRecordView) Message(bytes []byte) {
 	v.data = append(v.data, `,"message":`...)
 	v.data = strconv.AppendQuote(v.data, unsafe.String(unsafe.SliceData(bytes), len(bytes)))
 }
 
-func (v *RecordView) ContextVisitor() core.RecordContextVisitor {
-	return &contextView{
+func (v *JSONRecordView) ContextVisitor() core.RecordContextVisitor {
+	return &jsonContextView{
 		rec:  v,
 		data: v.data,
 		old:  true,
 	}
 }
 
-type contextView struct {
+type jsonContextView struct {
 	old   bool
-	rec   *RecordView
+	rec   *JSONRecordView
 	data  []byte
 	inErr bool
 	text  [][]byte
 }
 
-func (c *contextView) Finish() {
+func (c *jsonContextView) Finish() {
 	c.rec.data = c.data
 }
 
-func (c *contextView) pushKey(key []byte) {
+func (c *jsonContextView) pushKey(key []byte) {
 	if c.old {
 		c.data = append(c.data, ',')
 	}
@@ -103,7 +103,7 @@ func (c *contextView) pushKey(key []byte) {
 	c.old = true
 }
 
-func (c *contextView) pushKeyStr(key string) {
+func (c *jsonContextView) pushKeyStr(key string) {
 	if c.old {
 		c.data = append(c.data, ',')
 	}
@@ -112,27 +112,27 @@ func (c *contextView) pushKeyStr(key string) {
 	c.old = true
 }
 
-func (c *contextView) pushBytes(key []byte, data []byte) {
+func (c *jsonContextView) pushBytes(key []byte, data []byte) {
 	c.pushKey(key)
 	c.data = append(c.data, data...)
 }
 
-func (c *contextView) pushStr(key []byte, data string) {
+func (c *jsonContextView) pushStr(key []byte, data string) {
 	c.pushKey(key)
 	c.data = append(c.data, data...)
 }
 
-func (c *contextView) pushQuoteBytes(key []byte, data []byte) {
+func (c *jsonContextView) pushQuoteBytes(key []byte, data []byte) {
 	c.pushKey(key)
 	c.data = strconv.AppendQuote(c.data, unsafe.String(unsafe.SliceData(data), len(data)))
 }
 
-func (c *contextView) pushQuoteStr(key []byte, data string) {
+func (c *jsonContextView) pushQuoteStr(key []byte, data string) {
 	c.pushKey(key)
 	c.data = strconv.AppendQuote(c.data, data)
 }
 
-func (c *contextView) Bool(key []byte, value bool) {
+func (c *jsonContextView) Bool(key []byte, value bool) {
 	if value {
 		c.pushStr(key, "true")
 	} else {
@@ -140,76 +140,77 @@ func (c *contextView) Bool(key []byte, value bool) {
 	}
 }
 
-func (c *contextView) Time(key []byte, value time.Time) {
+func (c *jsonContextView) Time(key []byte, value time.Time) {
 	c.pushQuoteStr(key, value.Format(time.RFC3339Nano))
 }
 
-func (c *contextView) Duration(key []byte, value time.Duration) {
+func (c *jsonContextView) Duration(key []byte, value time.Duration) {
 	c.pushQuoteStr(key, value.String())
 }
 
-func (c *contextView) Int(key []byte, value int) {
+func (c *jsonContextView) Int(key []byte, value int) {
 	c.pushStr(key, strconv.Itoa(value))
 }
 
-func (c *contextView) Int8(key []byte, value int8) {
+func (c *jsonContextView) Int8(key []byte, value int8) {
 	c.pushStr(key, strconv.FormatInt(int64(value), 10))
 }
 
-func (c *contextView) Int16(key []byte, value int16) {
+func (c *jsonContextView) Int16(key []byte, value int16) {
 	c.pushStr(key, strconv.FormatInt(int64(value), 10))
 }
 
-func (c *contextView) Int32(key []byte, value int32) {
+func (c *jsonContextView) Int32(key []byte, value int32) {
 	c.pushStr(key, strconv.FormatInt(int64(value), 10))
 }
 
-func (c *contextView) Int64(key []byte, value int64) {
+func (c *jsonContextView) Int64(key []byte, value int64) {
 	c.pushStr(key, strconv.FormatInt(value, 10))
 }
 
-func (c *contextView) Uint(key []byte, value uint) {
+func (c *jsonContextView) Uint(key []byte, value uint) {
 	c.pushStr(key, strconv.FormatUint(uint64(value), 10))
 }
 
-func (c *contextView) Uint8(key []byte, value uint8) {
+func (c *jsonContextView) Uint8(key []byte, value uint8) {
 	c.pushStr(key, strconv.FormatUint(uint64(value), 10))
 }
 
-func (c *contextView) Uint16(key []byte, value uint16) {
+func (c *jsonContextView) Uint16(key []byte, value uint16) {
 	c.pushStr(key, strconv.FormatUint(uint64(value), 10))
 }
 
-func (c *contextView) Uint32(key []byte, value uint32) {
+func (c *jsonContextView) Uint32(key []byte, value uint32) {
 	c.pushStr(key, strconv.FormatUint(uint64(value), 10))
 }
 
-func (c *contextView) Uint64(key []byte, value uint64) {
+func (c *jsonContextView) Uint64(key []byte, value uint64) {
 	c.pushStr(key, strconv.FormatUint(value, 10))
 }
 
-func (c *contextView) Float32(key []byte, value float32) {
+func (c *jsonContextView) Float32(key []byte, value float32) {
 	c.pushStr(key, strconv.FormatFloat(float64(value), 'g', -1, 32))
 }
 
-func (c *contextView) Float64(key []byte, value float64) {
+func (c *jsonContextView) Float64(key []byte, value float64) {
 	c.pushStr(key, strconv.FormatFloat(value, 'g', -1, 64))
 }
 
-func (c *contextView) Str(key []byte, value []byte) {
+func (c *jsonContextView) Str(key []byte, value []byte) {
 	c.pushQuoteBytes(key, value)
 }
 
-func (c *contextView) Bytes(key []byte, value []byte) {
-	c.pushQuoteStr(key, fmt.Sprint(value))
+func (c *jsonContextView) Bytes(key []byte, value []byte) {
+	var length = (len(value) + 2) * 4 / 3
+	c.pushQuoteBytes(key, base64.RawStdEncoding.AppendEncode(make([]byte, 0, length), value))
 }
 
-func (c *contextView) RawError(key []byte, value []byte) {
+func (c *jsonContextView) RawError(key []byte, value []byte) {
 	c.rec.errPos = append(c.rec.errPos, len(c.data))
 	c.pushQuoteBytes(key, value)
 }
 
-func (c *contextView) BoolSlice(key []byte, seq []bool) {
+func (c *jsonContextView) BoolSlice(key []byte, seq []bool) {
 	c.pushKey(key)
 	c.data = append(c.data, '[')
 	for i, b := range seq {
@@ -225,7 +226,7 @@ func (c *contextView) BoolSlice(key []byte, seq []bool) {
 	c.data = append(c.data, ']')
 }
 
-func (c *contextView) IntSlice(key []byte, seq []int) {
+func (c *jsonContextView) IntSlice(key []byte, seq []int) {
 	c.pushKey(key)
 	c.data = append(c.data, '[')
 	for i, b := range seq {
@@ -237,7 +238,7 @@ func (c *contextView) IntSlice(key []byte, seq []int) {
 	c.data = append(c.data, ']')
 }
 
-func (c *contextView) Int8Slice(key []byte, seq []int8) {
+func (c *jsonContextView) Int8Slice(key []byte, seq []int8) {
 	c.pushKey(key)
 	c.data = append(c.data, '[')
 	for i, b := range seq {
@@ -249,7 +250,7 @@ func (c *contextView) Int8Slice(key []byte, seq []int8) {
 	c.data = append(c.data, ']')
 }
 
-func (c *contextView) Int16Slice(key []byte, seq []int16) {
+func (c *jsonContextView) Int16Slice(key []byte, seq []int16) {
 	c.pushKey(key)
 	c.data = append(c.data, '[')
 	for i, b := range seq {
@@ -261,7 +262,7 @@ func (c *contextView) Int16Slice(key []byte, seq []int16) {
 	c.data = append(c.data, ']')
 }
 
-func (c *contextView) Int32Slice(key []byte, seq []int32) {
+func (c *jsonContextView) Int32Slice(key []byte, seq []int32) {
 	c.pushKey(key)
 	c.data = append(c.data, '[')
 	for i, b := range seq {
@@ -273,7 +274,7 @@ func (c *contextView) Int32Slice(key []byte, seq []int32) {
 	c.data = append(c.data, ']')
 }
 
-func (c *contextView) Int64Slice(key []byte, seq []int64) {
+func (c *jsonContextView) Int64Slice(key []byte, seq []int64) {
 	c.pushKey(key)
 	c.data = append(c.data, '[')
 	for i, b := range seq {
@@ -285,7 +286,7 @@ func (c *contextView) Int64Slice(key []byte, seq []int64) {
 	c.data = append(c.data, ']')
 }
 
-func (c *contextView) UintSlice(key []byte, seq []uint) {
+func (c *jsonContextView) UintSlice(key []byte, seq []uint) {
 	c.pushKey(key)
 	c.data = append(c.data, '[')
 	for i, b := range seq {
@@ -297,7 +298,7 @@ func (c *contextView) UintSlice(key []byte, seq []uint) {
 	c.data = append(c.data, ']')
 }
 
-func (c *contextView) Uint8Slice(key []byte, seq []uint8) {
+func (c *jsonContextView) Uint8Slice(key []byte, seq []uint8) {
 	c.pushKey(key)
 	c.data = append(c.data, '[')
 	for i, b := range seq {
@@ -309,7 +310,7 @@ func (c *contextView) Uint8Slice(key []byte, seq []uint8) {
 	c.data = append(c.data, ']')
 }
 
-func (c *contextView) Uint16Slice(key []byte, seq []uint16) {
+func (c *jsonContextView) Uint16Slice(key []byte, seq []uint16) {
 	c.pushKey(key)
 	c.data = append(c.data, '[')
 	for i, b := range seq {
@@ -321,7 +322,7 @@ func (c *contextView) Uint16Slice(key []byte, seq []uint16) {
 	c.data = append(c.data, ']')
 }
 
-func (c *contextView) Uint32Slice(key []byte, seq []uint32) {
+func (c *jsonContextView) Uint32Slice(key []byte, seq []uint32) {
 	c.pushKey(key)
 	c.data = append(c.data, '[')
 	for i, b := range seq {
@@ -333,7 +334,7 @@ func (c *contextView) Uint32Slice(key []byte, seq []uint32) {
 	c.data = append(c.data, ']')
 }
 
-func (c *contextView) Uint64Slice(key []byte, seq []uint64) {
+func (c *jsonContextView) Uint64Slice(key []byte, seq []uint64) {
 	c.pushKey(key)
 	c.data = append(c.data, '[')
 	for i, b := range seq {
@@ -345,7 +346,7 @@ func (c *contextView) Uint64Slice(key []byte, seq []uint64) {
 	c.data = append(c.data, ']')
 }
 
-func (c *contextView) Float32Slice(key []byte, seq []float32) {
+func (c *jsonContextView) Float32Slice(key []byte, seq []float32) {
 	c.pushKey(key)
 	c.data = append(c.data, '[')
 	for i, b := range seq {
@@ -357,7 +358,7 @@ func (c *contextView) Float32Slice(key []byte, seq []float32) {
 	c.data = append(c.data, ']')
 }
 
-func (c *contextView) Float64Slice(key []byte, seq []float64) {
+func (c *jsonContextView) Float64Slice(key []byte, seq []float64) {
 	c.pushKey(key)
 	c.data = append(c.data, '[')
 	for i, b := range seq {
@@ -369,7 +370,7 @@ func (c *contextView) Float64Slice(key []byte, seq []float64) {
 	c.data = append(c.data, ']')
 }
 
-func (c *contextView) StrSlice(key []byte, seq [][]byte) {
+func (c *jsonContextView) StrSlice(key []byte, seq [][]byte) {
 	c.pushKey(key)
 	c.data = append(c.data, '[')
 	for i, b := range seq {
@@ -383,18 +384,18 @@ func (c *contextView) StrSlice(key []byte, seq [][]byte) {
 	c.data = append(c.data, ']')
 }
 
-func (c *contextView) EnterGroup(key []byte) {
+func (c *jsonContextView) EnterGroup(key []byte) {
 	c.pushKey(key)
 	c.data = append(c.data, '{')
 	c.old = false
 }
 
-func (c *contextView) LeaveGroup() {
+func (c *jsonContextView) LeaveGroup() {
 	c.data = append(c.data, '}')
 	c.old = true
 }
 
-func (c *contextView) EnterError(key []byte) {
+func (c *jsonContextView) EnterError(key []byte) {
 	c.rec.errPos = append(c.rec.errPos, len(c.data))
 	c.pushKey(key)
 	c.data = append(c.data, '{')
@@ -402,7 +403,7 @@ func (c *contextView) EnterError(key []byte) {
 	c.inErr = false
 }
 
-func (c *contextView) EnterErrorStage(state core.ErrorProcessingStage, text []byte) {
+func (c *jsonContextView) EnterErrorStage(state core.ErrorProcessingStage, text []byte) {
 	if !c.inErr {
 		c.pushKeyStr("@context")
 		c.data = append(c.data, '{')
@@ -422,21 +423,21 @@ func (c *contextView) EnterErrorStage(state core.ErrorProcessingStage, text []by
 	c.old = false
 }
 
-func (c *contextView) LeaveErrorStage() {
+func (c *jsonContextView) LeaveErrorStage() {
 	c.data = append(c.data, '}')
 	c.old = true
 }
 
 var textContextKey = []byte("@text")
 
-func (c *contextView) LeaveError(text []byte) {
+func (c *jsonContextView) LeaveError(text []byte) {
 	c.data = append(c.data, '}') // Close @context.
 	c.pushQuoteBytes(textContextKey, text)
 	c.data = append(c.data, '}')
 	c.old = true
 }
 
-func (c *contextView) Location(file []byte, line int) {
+func (c *jsonContextView) ErrorStageLocation(file []byte, line int) {
 	c.pushKeyStr("@location")
 	c.data = strconv.AppendQuote(c.data, unsafe.String(unsafe.SliceData(file), len(file)))
 	c.data = c.data[:len(c.data)-1]

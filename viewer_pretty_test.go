@@ -1,0 +1,161 @@
+package blog
+
+import (
+	"context"
+	"encoding/json"
+	"io"
+	"math"
+	"testing"
+	"time"
+
+	"github.com/alecthomas/assert/v2"
+
+	"github.com/sirkon/blog/internal/core"
+)
+
+func TestNewPrettyWriter(t *testing.T) {
+	type Sample struct {
+		BoolTrue       bool      `json:"bool_true"`
+		BoolFalse      bool      `json:"bool_false"`
+		Time           time.Time `json:"time"`
+		IntShort       int       `json:"int_short"`
+		Int            int       `json:"int"`
+		Int8           int8      `json:"int8"`
+		Int16          int16     `json:"int16"`
+		Int32          int32     `json:"int32"`
+		Int64Short     int64     `json:"int64_short"`
+		Int64          int64     `json:"int64"`
+		UintShort      uint      `json:"uint_short"`
+		Uint           uint      `json:"uint"`
+		Uint8          uint8     `json:"uint8"`
+		Uint16         uint16    `json:"uint16"`
+		Uint32         uint32    `json:"uint32"`
+		Uint64Short    uint64    `json:"uint64_short"`
+		Uint64         uint64    `json:"uint64"`
+		Float32        float32   `json:"float32"`
+		Float64        float64   `json:"float64"`
+		StrEmpty       string    `json:"string_empty"`
+		StrVeryShort   string    `json:"string_very_short"`
+		StrShort       string    `json:"string_short"`
+		String         string    `json:"string"`
+		BytesEmpty     []byte    `json:"bytes_empty"`
+		BytesVeryShort []byte    `json:"bytes_very_short"`
+		BytesShort     []byte    `json:"bytes_short"`
+		Bytes          []byte    `json:"bytes"`
+
+		IntSlice     []int     `json:"ints"`
+		Int8Slice    []int8    `json:"int8s"`
+		Int16Slice   []int16   `json:"int16s"`
+		Int32Slice   []int32   `json:"int32s"`
+		Int64Slice   []int64   `json:"int64s"`
+		UintSlice    []uint    `json:"uints"`
+		Uint8Slice   []uint8   `json:"uint8s"`
+		Uint16Slice  []uint16  `json:"uint16s"`
+		Uint32Slice  []uint32  `json:"uint32s"`
+		Uint64Slice  []uint64  `json:"uint64s"`
+		Float32Slice []float32 `json:"float32s"`
+		Float64Slice []float64 `json:"float64s"`
+		StringSlice  []string  `json:"strings"`
+	}
+
+	sample := &Sample{
+		BoolTrue:       true,
+		BoolFalse:      false,
+		Time:           time.Now(),
+		IntShort:       100,
+		Int:            -1,
+		Int8:           -2,
+		Int16:          -3,
+		Int32:          -4,
+		Int64Short:     1,
+		Int64:          -5,
+		UintShort:      101,
+		Uint:           math.MaxUint64,
+		Uint8:          1,
+		Uint16:         2,
+		Uint32:         3,
+		Uint64:         math.MaxUint64,
+		Float64:        math.Pi,
+		StrEmpty:       "",
+		StrVeryShort:   "12345",
+		StrShort:       "123456789",
+		String:         "abcdefghijklmnopqrstuvwxyz",
+		BytesEmpty:     nil,
+		BytesVeryShort: []byte{1, 2, 3},
+		BytesShort:     []byte{1, 2, 3, 4, 5, 6, 7, 8},
+		Bytes:          []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19},
+		IntSlice:       []int{math.MinInt, 100000000, math.MaxInt},
+		Int8Slice:      []int8{math.MinInt8, 100, math.MaxInt8},
+		Int16Slice:     []int16{math.MinInt16, 400, math.MaxInt16},
+		Int32Slice:     []int32{math.MinInt32, 10000, math.MaxInt32},
+		Int64Slice:     []int64{math.MinInt64, math.MaxInt64},
+		UintSlice:      []uint{0, 100, 200, math.MaxUint64},
+		Uint8Slice:     []uint8{0, 100, 222, math.MaxUint8},
+		Uint16Slice:    []uint16{0, 100, 300, 999, math.MaxUint16},
+		Uint32Slice:    []uint32{0, 100, 400, 9999, math.MaxUint32},
+		Uint64Slice:    []uint64{0, 100, 500, 139999999, math.MaxUint64},
+		Float32Slice:   []float32{1.25, 2.5, 3.75},
+		Float64Slice:   []float64{math.Pi, math.E, math.Phi, math.Ln10},
+		StringSlice:    []string{"ghijklmnop", "qrstuvwxyz"},
+	}
+
+	w := NewPrettyWriter(io.Discard)
+	logger, err := NewLogger(w)
+	if err != nil {
+		t.Fatal(core.WrapError(err, "create logger"))
+	}
+
+	logger.Error(context.Background(), "test",
+		core.Bool("bool_true", sample.BoolTrue),
+		core.Bool("bool_false", sample.BoolFalse),
+		core.Time("time", sample.Time),
+		core.Int("int_short", sample.IntShort),
+		core.Int("int", sample.Int),
+		core.Int8("int8", sample.Int8),
+		core.Int16("int16", sample.Int16),
+		core.Int32("int32", sample.Int32),
+		core.Int64("int64_short", sample.Int64Short),
+		core.Int64("int64", sample.Int64),
+		core.Uint("uint_short", sample.UintShort),
+		core.Uint("uint", sample.Uint),
+		core.Uint8("uint8", sample.Uint8),
+		core.Uint16("uint16", sample.Uint16),
+		core.Uint32("uint32", sample.Uint32),
+		core.Uint64("uint64_short", sample.Uint64Short),
+		core.Uint64("uint64", sample.Uint64),
+		core.Flt32("float32", sample.Float32),
+		core.Flt64("float64", sample.Float64),
+		core.Str("string_empty", sample.StrEmpty),
+		core.Str("string_very_short", sample.StrVeryShort),
+		core.Str("string_short", sample.StrShort),
+		core.Str("string", sample.String),
+		core.Bytes("bytes_empty", sample.BytesEmpty),
+		core.Bytes("bytes_very_short", sample.BytesVeryShort),
+		core.Bytes("bytes_short", sample.BytesShort),
+		core.Bytes("bytes", sample.Bytes),
+
+		core.Ints("ints", sample.IntSlice),
+		core.Int8s("int8s", sample.Int8Slice),
+		core.Int16s("int16s", sample.Int16Slice),
+		core.Int32s("int32s", sample.Int32Slice),
+		core.Int64s("int64s", sample.Int64Slice),
+		core.Uints("uints", sample.UintSlice),
+		core.Uint8s("uint8s", sample.Uint8Slice),
+		core.Uint16s("uint16s", sample.Uint16Slice),
+		core.Uint32s("uint32s", sample.Uint32Slice),
+		core.Uint64s("uint64s", sample.Uint64Slice),
+		core.Flt32s("float32s", sample.Float32Slice),
+		core.Flt64s("float64s", sample.Float64Slice),
+		core.Strs("strings", sample.StringSlice),
+	)
+
+	w.buf = w.buf[:0]
+	w.walkJSON()
+
+	var got Sample
+	if err := json.Unmarshal(w.buf, &got); err != nil {
+		t.Fatal(core.WrapError(err, "unmarshal sample output"))
+	}
+
+	assert.Equal(t, *sample, got)
+}
