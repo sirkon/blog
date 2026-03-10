@@ -3,8 +3,9 @@ package blog
 import (
 	"context"
 	"encoding/json"
-	"io"
 	"math"
+	"os"
+	"slices"
 	"testing"
 	"time"
 
@@ -14,10 +15,14 @@ import (
 )
 
 func TestNewPrettyWriter(t *testing.T) {
+	dur := time.Second * 3 / 2
+	core.InsertLocationsOn()
+
 	type Sample struct {
 		BoolTrue       bool      `json:"bool_true"`
 		BoolFalse      bool      `json:"bool_false"`
 		Time           time.Time `json:"time"`
+		Duration       string    `json:"duration"`
 		IntShort       int       `json:"int_short"`
 		Int            int       `json:"int"`
 		Int8           int8      `json:"int8"`
@@ -43,63 +48,74 @@ func TestNewPrettyWriter(t *testing.T) {
 		BytesShort     []byte    `json:"bytes_short"`
 		Bytes          []byte    `json:"bytes"`
 
-		IntSlice     []int     `json:"ints"`
-		Int8Slice    []int8    `json:"int8s"`
-		Int16Slice   []int16   `json:"int16s"`
-		Int32Slice   []int32   `json:"int32s"`
-		Int64Slice   []int64   `json:"int64s"`
-		UintSlice    []uint    `json:"uints"`
-		Uint8Slice   []uint8   `json:"uint8s"`
-		Uint16Slice  []uint16  `json:"uint16s"`
-		Uint32Slice  []uint32  `json:"uint32s"`
-		Uint64Slice  []uint64  `json:"uint64s"`
-		Float32Slice []float32 `json:"float32s"`
-		Float64Slice []float64 `json:"float64s"`
-		StringSlice  []string  `json:"strings"`
+		IntSliceEmpty        []int     `json:"int_slice_empty"`
+		IntSlice             []int     `json:"ints"`
+		Int8Slice            []int8    `json:"int8s"`
+		Int16Slice           []int16   `json:"int16s"`
+		Int32Slice           []int32   `json:"int32s"`
+		Int64Slice           []int64   `json:"int64s"`
+		UintSlice            []uint    `json:"uints"`
+		Uint8Slice           []uint8   `json:"uint8s"`
+		Uint16Slice          []uint16  `json:"uint16s"`
+		Uint32Slice          []uint32  `json:"uint32s"`
+		Uint64Slice          []uint64  `json:"uint64s"`
+		Float32Slice         []float32 `json:"float32s"`
+		Float64Slice         []float64 `json:"float64s"`
+		StringSlice          []string  `json:"strings"`
+		BoolSliceEmpty       []bool    `json:"bools_empty"`
+		BoolSliceShort       []bool    `json:"bools_short"`
+		BoolSliceShortLarger []bool    `json:"bools_short_larger"`
+		BoolSlice            []bool    `json:"bools"`
 	}
 
 	sample := &Sample{
-		BoolTrue:       true,
-		BoolFalse:      false,
-		Time:           time.Now(),
-		IntShort:       100,
-		Int:            -1,
-		Int8:           -2,
-		Int16:          -3,
-		Int32:          -4,
-		Int64Short:     1,
-		Int64:          -5,
-		UintShort:      101,
-		Uint:           math.MaxUint64,
-		Uint8:          1,
-		Uint16:         2,
-		Uint32:         3,
-		Uint64:         math.MaxUint64,
-		Float64:        math.Pi,
-		StrEmpty:       "",
-		StrVeryShort:   "12345",
-		StrShort:       "123456789",
-		String:         "abcdefghijklmnopqrstuvwxyz",
-		BytesEmpty:     nil,
-		BytesVeryShort: []byte{1, 2, 3},
-		BytesShort:     []byte{1, 2, 3, 4, 5, 6, 7, 8},
-		Bytes:          []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19},
-		IntSlice:       []int{math.MinInt, 100000000, math.MaxInt},
-		Int8Slice:      []int8{math.MinInt8, 100, math.MaxInt8},
-		Int16Slice:     []int16{math.MinInt16, 400, math.MaxInt16},
-		Int32Slice:     []int32{math.MinInt32, 10000, math.MaxInt32},
-		Int64Slice:     []int64{math.MinInt64, math.MaxInt64},
-		UintSlice:      []uint{0, 100, 200, math.MaxUint64},
-		Uint8Slice:     []uint8{0, 100, 222, math.MaxUint8},
-		Uint16Slice:    []uint16{0, 100, 300, 999, math.MaxUint16},
-		Uint32Slice:    []uint32{0, 100, 400, 9999, math.MaxUint32},
-		Uint64Slice:    []uint64{0, 100, 500, 139999999, math.MaxUint64},
-		Float32Slice:   []float32{1.25, 2.5, 3.75},
-		Float64Slice:   []float64{math.Pi, math.E, math.Phi, math.Ln10},
-		StringSlice:    []string{"ghijklmnop", "qrstuvwxyz"},
+		BoolTrue:             true,
+		BoolFalse:            false,
+		Time:                 time.Now(),
+		Duration:             dur.String(),
+		IntShort:             100,
+		Int:                  -1,
+		Int8:                 -2,
+		Int16:                -3,
+		Int32:                -4,
+		Int64Short:           1,
+		Int64:                -5,
+		UintShort:            101,
+		Uint:                 math.MaxUint64,
+		Uint8:                1,
+		Uint16:               2,
+		Uint32:               3,
+		Uint64:               math.MaxUint64,
+		Float64:              math.Pi,
+		StrEmpty:             "",
+		StrVeryShort:         "12345",
+		StrShort:             "123456789",
+		String:               "abcdefghijklmnopqrstuvwxyz",
+		BytesEmpty:           nil,
+		BytesVeryShort:       []byte{1, 2, 3},
+		BytesShort:           []byte{1, 2, 3, 4, 5, 6, 7, 8},
+		Bytes:                []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19},
+		IntSliceEmpty:        []int{},
+		IntSlice:             []int{math.MinInt, 100000000, math.MaxInt},
+		Int8Slice:            []int8{math.MinInt8, 100, math.MaxInt8},
+		Int16Slice:           []int16{math.MinInt16, 400, math.MaxInt16},
+		Int32Slice:           []int32{math.MinInt32, 10000, math.MaxInt32},
+		Int64Slice:           []int64{math.MinInt64, math.MaxInt64},
+		UintSlice:            []uint{0, 100, 200, math.MaxUint64},
+		Uint8Slice:           []uint8{0, 100, 222, math.MaxUint8},
+		Uint16Slice:          []uint16{0, 100, 300, 999, math.MaxUint16},
+		Uint32Slice:          []uint32{0, 100, 400, 9999, math.MaxUint32},
+		Uint64Slice:          []uint64{0, 100, 500, 139999999, math.MaxUint64},
+		Float32Slice:         []float32{1.25, 2.5, 3.75},
+		Float64Slice:         []float64{math.Pi, math.E, math.Phi, math.Ln10},
+		StringSlice:          []string{"ghijklmnop", "qrstuvwxyz"},
+		BoolSliceEmpty:       []bool{},
+		BoolSliceShort:       []bool{true, false},
+		BoolSliceShortLarger: slices.Repeat([]bool{true, true, false}, 22),
+		BoolSlice:            slices.Repeat([]bool{true, false, true, true}, 22),
 	}
 
-	w := NewPrettyWriter(io.Discard)
+	w := NewPrettyWriter(os.Stdout)
 	logger, err := NewLogger(w)
 	if err != nil {
 		t.Fatal(core.WrapError(err, "create logger"))
@@ -109,6 +125,7 @@ func TestNewPrettyWriter(t *testing.T) {
 		core.Bool("bool_true", sample.BoolTrue),
 		core.Bool("bool_false", sample.BoolFalse),
 		core.Time("time", sample.Time),
+		core.Duration("duration", dur),
 		core.Int("int_short", sample.IntShort),
 		core.Int("int", sample.Int),
 		core.Int8("int8", sample.Int8),
@@ -134,6 +151,7 @@ func TestNewPrettyWriter(t *testing.T) {
 		core.Bytes("bytes_short", sample.BytesShort),
 		core.Bytes("bytes", sample.Bytes),
 
+		core.Ints("int_slice_empty", sample.IntSliceEmpty),
 		core.Ints("ints", sample.IntSlice),
 		core.Int8s("int8s", sample.Int8Slice),
 		core.Int16s("int16s", sample.Int16Slice),
@@ -147,6 +165,11 @@ func TestNewPrettyWriter(t *testing.T) {
 		core.Flt32s("float32s", sample.Float32Slice),
 		core.Flt64s("float64s", sample.Float64Slice),
 		core.Strs("strings", sample.StringSlice),
+
+		core.Bools("bools_empty", sample.BoolSliceEmpty),
+		core.Bools("bools_short", sample.BoolSliceShort),
+		core.Bools("bools_short_larger", sample.BoolSliceShortLarger),
+		core.Bools("bools", sample.BoolSlice),
 	)
 
 	w.buf = w.buf[:0]

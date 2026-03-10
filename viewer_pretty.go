@@ -71,7 +71,7 @@ func (g *PrettyWriter) Write(p []byte) (n int, err error) {
 		_, _ = fmt.Fprintln(os.Stderr, "failed to write buffer:", err)
 	}
 
-	return n, nil
+	return len(p), nil
 }
 
 // walkJSON adds new line. All walkers must put new line themselves.
@@ -152,9 +152,46 @@ func (g *PrettyWriter) walkJSON() {
 			g.buf = base64.URLEncoding.AppendEncode(g.buf, value)
 			g.buf = append(g.buf, '"')
 		case prettyViewKindValueBoolSlice:
-			g.buf = append(g.buf, "NULL"...)
+			g.unpackBools(node)
 		case prettyViewKindValueBoolSliceShort:
-			g.buf = append(g.buf, "NULL"...)
+			g.buf = append(g.buf, '[')
+			length := node.kind << 52 >> 57
+			if length == 0 {
+				g.buf = append(g.buf, ']')
+				break
+			}
+			part1 := node.kind >> 12
+			part2 := node.misc
+			if length <= 52 {
+				for range length {
+					if part1&0x01 != 0 {
+						g.buf = append(g.buf, "true,"...)
+					} else {
+						g.buf = append(g.buf, "false,"...)
+					}
+					part1 >>= 1
+				}
+			} else {
+				for range 52 {
+					if part1&0x01 != 0 {
+						g.buf = append(g.buf, "true,"...)
+					} else {
+						g.buf = append(g.buf, "false,"...)
+					}
+					part1 >>= 1
+				}
+				length -= 52
+				for range length {
+					if part2&0x01 != 0 {
+						g.buf = append(g.buf, "true,"...)
+					} else {
+						g.buf = append(g.buf, "false,"...)
+					}
+					part2 >>= 1
+				}
+			}
+			g.buf = g.buf[:len(g.buf)-1]
+			g.buf = append(g.buf, ']')
 		case prettyViewKindValueIntSlice:
 			off := node.kind >> 32
 			src := unsafe.Slice((*int)(unsafe.Add(unsafe.Pointer(unsafe.SliceData(t.data)), off)), node.misc)

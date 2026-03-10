@@ -45,3 +45,23 @@ func unpackShortStringValue(n *prettyViewObjNode, shortPlaceholder *uint64, long
 	*(*uint64)(unsafe.Add(base, 8)) = uint64(n.misc) >> 16
 	return longPlaceholder[:length]
 }
+
+func (g *PrettyWriter) unpackBools(node *prettyViewObjNode) {
+	g.buf = append(g.buf, '[')
+	bytesNo := (node.misc + 7) / 8
+	rest := node.misc
+	src := unsafe.Slice((*byte)(unsafe.Add(unsafe.Pointer(unsafe.SliceData(g.view.tree.data)), node.kind>>32)), bytesNo)
+	for _, b := range src {
+		l := min(8, rest)
+		for range l {
+			if b&0x01 > 0 {
+				g.buf = append(g.buf, "true,"...)
+			} else {
+				g.buf = append(g.buf, "false,"...)
+			}
+			b >>= 1
+		}
+	}
+	g.buf = g.buf[:len(g.buf)-1]
+	g.buf = append(g.buf, ']')
+}

@@ -79,11 +79,11 @@ type RecordContextVisitor interface {
 }
 
 func ProcessRecord(line []byte, viewer RecordViewer) (err error) {
-	//defer func() {
+	// defer func() {
 	//	if r := recover(); r != nil {
 	//		err = errors.New(fmt.Sprint(r))
 	//	}
-	//}()
+	// }()
 
 	if len(line) < 5 {
 		return NewError("line is too short")
@@ -326,7 +326,7 @@ func (d *payloadDeconstructor) deconstructPayloadNodeValue(
 		case ValueKindSliceUint8:
 			visitor.Uint8Slice(key, v)
 		case ValueKindSliceInt8:
-			visitor.Int8Slice(key, unsafe.Slice((*int8)(unsafe.Pointer(&v[0])), len(v)))
+			visitor.Int8Slice(key, unsafe.Slice((*int8)(unsafe.Pointer(unsafe.SliceData(v))), len(v)))
 		}
 	case ValueKindSliceBool:
 		var length int
@@ -349,7 +349,7 @@ func (d *payloadDeconstructor) deconstructPayloadNodeValue(
 		}
 		switch kind {
 		case ValueKindSliceInt16:
-			visitor.Int16Slice(key, unsafe.Slice((*int16)(unsafe.Pointer(&res[0])), len(res)))
+			visitor.Int16Slice(key, unsafe.Slice((*int16)(unsafe.Pointer(unsafe.SliceData(res))), len(res)))
 		case ValueKindSliceUint16:
 			visitor.Uint16Slice(key, res)
 		}
@@ -364,15 +364,17 @@ func (d *payloadDeconstructor) deconstructPayloadNodeValue(
 		}
 		switch kind {
 		case ValueKindSliceInt32:
-			visitor.Int32Slice(key, unsafe.Slice((*int32)(unsafe.Pointer(&res[0])), len(res)))
+			visitor.Int32Slice(key, unsafe.Slice((*int32)(unsafe.Pointer(unsafe.SliceData(res))), len(res)))
 		case ValueKindSliceFloat32:
-			visitor.Float32Slice(key, unsafe.Slice((*float32)(unsafe.Pointer(&res[0])), len(res)))
+			visitor.Float32Slice(key, unsafe.Slice((*float32)(unsafe.Pointer(unsafe.SliceData(res))), len(res)))
 		case ValueKindSliceUint32:
 			visitor.Uint32Slice(key, res)
 		}
 	case ValueKindSliceInt64, ValueKindSliceUint64, ValueKindSliceFloat64, ValueKindSliceInt, ValueKindSliceUint:
 		var length int
 		length, payload = mustReadUvarint(payload)
+		if length == 0 {
+		}
 		res := make([]uint64, length)
 		for i := range length {
 			var v uint64
@@ -381,13 +383,13 @@ func (d *payloadDeconstructor) deconstructPayloadNodeValue(
 		}
 		switch kind {
 		case ValueKindSliceInt:
-			visitor.IntSlice(key, unsafe.Slice((*int)(unsafe.Pointer(&res[0])), len(res)))
+			visitor.IntSlice(key, unsafe.Slice((*int)(unsafe.Pointer(unsafe.SliceData(res))), len(res)))
 		case ValueKindSliceUint:
-			visitor.UintSlice(key, unsafe.Slice((*uint)(unsafe.Pointer(&res[0])), len(res)))
+			visitor.UintSlice(key, unsafe.Slice((*uint)(unsafe.Pointer(unsafe.SliceData(res))), len(res)))
 		case ValueKindSliceInt64:
-			visitor.Int64Slice(key, unsafe.Slice((*int64)(unsafe.Pointer(&res[0])), len(res)))
+			visitor.Int64Slice(key, unsafe.Slice((*int64)(unsafe.Pointer(unsafe.SliceData(res))), len(res)))
 		case ValueKindSliceFloat64:
-			visitor.Float64Slice(key, unsafe.Slice((*float64)(unsafe.Pointer(&res[0])), len(res)))
+			visitor.Float64Slice(key, unsafe.Slice((*float64)(unsafe.Pointer(unsafe.SliceData(res))), len(res)))
 		case ValueKindSliceUint64:
 			visitor.Uint64Slice(key, res)
 		}
