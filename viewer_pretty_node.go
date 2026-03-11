@@ -11,23 +11,25 @@ import (
 const maxStringLen = 1 << 20
 
 type packedTree struct {
+	clen int
 	ctrl []byte
 	data []byte
 }
 
 func (t *packedTree) Reset() {
-	t.ctrl = t.ctrl[:0]
+	t.clen = 0
 	t.data = t.data[:0]
 }
 
 func (t *packedTree) ensureSpace() {
-	if cap(t.ctrl)-len(t.ctrl) < prettyViewNodeSize {
+	t.clen += prettyViewNodeSize
+	if t.clen >= len(t.ctrl) {
 		t.ctrl = append(t.ctrl, prettyViewObjNodePlaceholder[:]...)
 	}
 }
 
 func (t *packedTree) AddObjectRoot(prev int, key []byte) int {
-	off := len(t.ctrl)
+	off := t.clen
 	t.ensureSpace()
 	base := unsafe.Pointer(unsafe.SliceData(t.ctrl))
 	t.linkToPrev(prev, off)
@@ -38,34 +40,33 @@ func (t *packedTree) AddObjectRoot(prev int, key []byte) int {
 		next: 0,
 		misc: 0,
 	}
-	t.ctrl = unsafe.Slice((*byte)(base), off+prettyViewNodeSize)
 	return off
 }
 
 func (t *packedTree) CloseObjectRoot(prev int) int {
 	if prev < 0 {
-		return len(t.ctrl)
+		return t.clen
 	}
 
 	base := unsafe.Pointer(unsafe.SliceData(t.ctrl))
 	respt := (*prettyViewNode)(unsafe.Add(base, prev))
 	if respt.kind&0x1F != prettyViewKindRoot {
 		// Meaning the root node was added some child nodes, no need to finish it explicitly.
-		return len(t.ctrl)
+		return t.clen
 	}
 
 	// We have a group that was not given an element. We put a max of uint32 into misc to tell this.
 	// This expresses an impossible state anyway: we can't refer an element whose offset is max uint32
 	// because the element itself is 24 bytes long and can't just be fitted in there.
 	respt.misc = math.MaxUint32
-	return len(t.ctrl)
+	return t.clen
 }
 
 func (t *packedTree) AddString(prev int, key []byte, str []byte) int {
 	if len(str) > maxStringLen {
 		str = str[:maxStringLen]
 	}
-	off := len(t.ctrl)
+	off := t.clen
 	t.ensureSpace()
 	base := unsafe.Pointer(unsafe.SliceData(t.ctrl))
 	t.linkToPrev(prev, off)
@@ -74,12 +75,11 @@ func (t *packedTree) AddString(prev int, key []byte, str []byte) int {
 		key: t.packKey(key),
 	}
 	t.packStringValue(respt, str)
-	t.ctrl = unsafe.Slice((*byte)(base), off+prettyViewNodeSize)
 	return off
 }
 
 func (t *packedTree) AddBytes(prev int, key []byte, data []byte) int {
-	off := len(t.ctrl)
+	off := t.clen
 	t.ensureSpace()
 	base := unsafe.Pointer(unsafe.SliceData(t.ctrl))
 	t.linkToPrev(prev, off)
@@ -88,12 +88,11 @@ func (t *packedTree) AddBytes(prev int, key []byte, data []byte) int {
 		key: t.packKey(key),
 	}
 	t.packBytesValue(respt, data)
-	t.ctrl = unsafe.Slice((*byte)(base), off+prettyViewNodeSize)
 	return off
 }
 
 func (t *packedTree) AddInt(prev int, key []byte, data int64) int {
-	off := len(t.ctrl)
+	off := t.clen
 	t.ensureSpace()
 	base := unsafe.Pointer(unsafe.SliceData(t.ctrl))
 	t.linkToPrev(prev, off)
@@ -104,12 +103,11 @@ func (t *packedTree) AddInt(prev int, key []byte, data int64) int {
 		kind: prettyViewKindValueInt | prettyViewKind(kindPart),
 		misc: miscPart,
 	}
-	t.ctrl = unsafe.Slice((*byte)(base), off+prettyViewNodeSize)
 	return off
 }
 
 func (t *packedTree) AddUint(prev int, key []byte, data uint64) int {
-	off := len(t.ctrl)
+	off := t.clen
 	t.ensureSpace()
 	base := unsafe.Pointer(unsafe.SliceData(t.ctrl))
 	t.linkToPrev(prev, off)
@@ -120,7 +118,6 @@ func (t *packedTree) AddUint(prev int, key []byte, data uint64) int {
 		kind: prettyViewKindValueUint | prettyViewKind(kindPart),
 		misc: miscPart,
 	}
-	t.ctrl = unsafe.Slice((*byte)(base), off+prettyViewNodeSize)
 	return off
 }
 
@@ -137,7 +134,7 @@ func (t *packedTree) AddDuration(prev int, key []byte, data time.Duration) int {
 }
 
 func (t *packedTree) AddBool(prev int, key []byte, data bool) int {
-	off := len(t.ctrl)
+	off := t.clen
 	t.ensureSpace()
 	base := unsafe.Pointer(unsafe.SliceData(t.ctrl))
 	t.linkToPrev(prev, off)
@@ -150,7 +147,6 @@ func (t *packedTree) AddBool(prev int, key []byte, data bool) int {
 		key:  t.packKey(key),
 		kind: prettyViewKindValueBool | prettyViewKind(value<<8),
 	}
-	t.ctrl = unsafe.Slice((*byte)(base), off+prettyViewNodeSize)
 	return off
 }
 
@@ -306,7 +302,7 @@ func (t *packedTree) AddFloat64Slice(
 }
 
 func (t *packedTree) AddStringSlice(prev int, key []byte, data [][]byte) int {
-	off := len(t.ctrl)
+	off := t.clen
 	t.ensureSpace()
 	base := unsafe.Pointer(unsafe.SliceData(t.ctrl))
 	t.linkToPrev(prev, off)
@@ -318,7 +314,6 @@ func (t *packedTree) AddStringSlice(prev int, key []byte, data [][]byte) int {
 		kind: prettyViewKindValueStringSlice | prettyViewKind(dataOff<<32),
 		misc: uint32(len(data)),
 	}
-	t.ctrl = unsafe.Slice((*byte)(base), off+prettyViewNodeSize)
 	return off
 }
 
@@ -328,7 +323,7 @@ func (t *packedTree) addAnySlice(prev int,
 	items int,
 	kind prettyViewKind,
 ) int {
-	off := len(t.ctrl)
+	off := t.clen
 	t.ensureSpace()
 	base := unsafe.Pointer(unsafe.SliceData(t.ctrl))
 	t.linkToPrev(prev, off)
@@ -341,12 +336,11 @@ func (t *packedTree) addAnySlice(prev int,
 		next: 0,
 		misc: uint32(items),
 	}
-	t.ctrl = unsafe.Slice((*byte)(base), off+prettyViewNodeSize)
 	return off
 }
 
 func (t *packedTree) addNumFullWithKind(prev int, key []byte, data uint64, kind prettyViewKind) int {
-	off := len(t.ctrl)
+	off := t.clen
 	t.ensureSpace()
 	base := unsafe.Pointer(unsafe.SliceData(t.ctrl))
 	t.linkToPrev(prev, off)
@@ -358,7 +352,6 @@ func (t *packedTree) addNumFullWithKind(prev int, key []byte, data uint64, kind 
 		kind: kind | prettyViewKind(kindPart),
 		misc: miscPart,
 	}
-	t.ctrl = unsafe.Slice((*byte)(base), off+prettyViewNodeSize)
 	return off
 }
 

@@ -10,7 +10,7 @@ import (
 // AddBoolArray adds an array of bools packed as bitmaps.
 // Need to use binary.BigEndian on big endian architectures, probably.
 func (t *packedTree) AddBoolArray(prev int, key []byte, data []bool) int {
-	off := len(t.ctrl)
+	off := t.clen
 	t.ensureSpace()
 	base := unsafe.Pointer(unsafe.SliceData(t.ctrl))
 	t.linkToPrev(prev, off)
@@ -43,7 +43,6 @@ func (t *packedTree) AddBoolArray(prev int, key []byte, data []bool) int {
 			kind: prettyViewKindValueBoolSlice | prettyViewKind(dataOff<<32),
 			misc: uint32(len(data)),
 		}
-		t.ctrl = unsafe.Slice((*byte)(base), off+prettyViewNodeSize)
 		return off
 	}
 
@@ -69,7 +68,6 @@ func (t *packedTree) AddBoolArray(prev int, key []byte, data []bool) int {
 		kind: prettyViewKindValueBoolSliceShort | prettyViewKind(kindMask),
 		misc: uint32(misc),
 	}
-	t.ctrl = unsafe.Slice((*byte)(base), off+prettyViewNodeSize)
 	return off
 }
 

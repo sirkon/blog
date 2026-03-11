@@ -215,10 +215,12 @@ func TestNewPrettyWriter(t *testing.T) {
 		core.Bool("end", true),
 		core.Err(err),
 	)
+	fmt.Println(len(w.view.tree.ctrl), cap(w.view.tree.ctrl), w.view.tree.clen)
 
 	w.buf = w.buf[:0]
 	w.browseCtrl()
 	w.walkJSON()
+	fmt.Println(len(w.view.tree.ctrl), cap(w.view.tree.ctrl), w.view.tree.clen)
 
 	var got Sample
 	if err := json.Unmarshal(w.buf, &got); err != nil {

@@ -22,7 +22,10 @@ type PrettyWriter struct {
 }
 
 func NewPrettyWriter(w io.Writer) *PrettyWriter {
-	tree := &packedTree{}
+	tree := &packedTree{
+		ctrl: make([]byte, prettyViewNodeSize*128),
+		data: make([]byte, 0, 2048),
+	}
 	ctx := &packedContextDeconstruct{
 		tree: tree,
 	}
@@ -75,10 +78,10 @@ func (g *PrettyWriter) Write(p []byte) (n int, err error) {
 }
 
 func (g *PrettyWriter) browseCtrl() {
-	ctrl := g.view.tree.ctrl
+	clen := g.view.tree.clen
 	var pos int
-	for pos < len(ctrl) {
-		node := (*prettyViewNode)(unsafe.Add(unsafe.Pointer(unsafe.SliceData(ctrl)), pos))
+	for pos < clen {
+		node := (*prettyViewNode)(unsafe.Add(unsafe.Pointer(unsafe.SliceData(g.view.tree.ctrl)), pos))
 		fmt.Printf("%03x %q -> kind[%s] next[%03x] misc[%03x]\n", pos, g.view.tree.unpackKey(node), node.kind&0x1F, node.next, node.misc)
 		pos += prettyViewNodeSize
 	}
