@@ -68,9 +68,7 @@ const (
 
 	ValueKindMax ValueKind = 255
 
-	ValueErrorContext       = 1 + 1<<8
-	ValueErrorText          = 2 + 1<<8
-	ValueErrorStageLocation = 3 + 1<<8
+	ValuePredefinedUserID = 1 << 8
 
 	// There're ValueKind values at 257 and further to represent [Attr] with predefined keys, where their
 	// lowest byte represents a kind and the upper 7 bytes refer a key index.
@@ -169,9 +167,7 @@ func (k ValueKind) String() string {
 	default:
 		// Probably a predefined thing?
 		switch k >> 8 {
-		case ValueErrorContext:
-		case ValueErrorText:
-		case ValueErrorStageLocation:
+		case ValuePredefinedUserID:
 		default:
 			return fmt.Sprintf("spec-kind-unknown[%d]", k)
 		}
@@ -183,7 +179,5 @@ func (k ValueKind) String() string {
 // higher 7 bytes of uint64. That extended bytes keep an index of
 // the key spec in this slice.
 var PredefinedKeys = []string{
-	"@context",
-	"@text",
-	"@location",
+	"user-id",
 }

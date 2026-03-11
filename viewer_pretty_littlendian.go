@@ -1,4 +1,4 @@
-//go:build arm64
+//go:build arm64 || amd64 || riscv64
 
 package blog
 
@@ -7,7 +7,7 @@ import (
 	"unsafe"
 )
 
-func (t *packedTree) unpackKey(node *prettyViewObjNode) string {
+func (t *packedTree) unpackKey(node *prettyViewNode) string {
 	if node.key<<56 != 0 {
 		// Short key.
 		length := 8 - bits.LeadingZeros64(node.key)/8
@@ -21,7 +21,7 @@ func (t *packedTree) unpackKey(node *prettyViewObjNode) string {
 	return unsafe.String(ptr, length)
 }
 
-func unpackShortStringValue(n *prettyViewObjNode, shortPlaceholder *uint64, longPlaceholder [16]byte) []byte {
+func unpackShortStringValue(n *prettyViewNode, shortPlaceholder *uint64, longPlaceholder [16]byte) []byte {
 	if n.kind>>8 == 0 {
 		return nil
 	}
@@ -46,7 +46,7 @@ func unpackShortStringValue(n *prettyViewObjNode, shortPlaceholder *uint64, long
 	return longPlaceholder[:length]
 }
 
-func (g *PrettyWriter) unpackBools(node *prettyViewObjNode) {
+func (g *PrettyWriter) unpackBools(node *prettyViewNode) {
 	g.buf = append(g.buf, '[')
 	bytesNo := (node.misc + 7) / 8
 	rest := node.misc

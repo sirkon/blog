@@ -74,6 +74,16 @@ func (g *PrettyWriter) Write(p []byte) (n int, err error) {
 	return len(p), nil
 }
 
+func (g *PrettyWriter) browseCtrl() {
+	ctrl := g.view.tree.ctrl
+	var pos int
+	for pos < len(ctrl) {
+		node := (*prettyViewNode)(unsafe.Add(unsafe.Pointer(unsafe.SliceData(ctrl)), pos))
+		fmt.Printf("%03x %q -> kind[%s] next[%03x] misc[%03x]\n", pos, g.view.tree.unpackKey(node), node.kind&0x1F, node.next, node.misc)
+		pos += prettyViewNodeSize
+	}
+}
+
 // walkJSON adds new line. All walkers must put new line themselves.
 func (g *PrettyWriter) walkJSON() {
 	g.buf = append(g.buf, '{')
@@ -82,8 +92,10 @@ func (g *PrettyWriter) walkJSON() {
 	ctrl := g.view.tree.ctrl
 	t := g.view.tree
 	var old bool
+
+mainLoop:
 	for {
-		node := (*prettyViewObjNode)(unsafe.Add(unsafe.Pointer(unsafe.SliceData(ctrl)), pos))
+		node := (*prettyViewNode)(unsafe.Add(unsafe.Pointer(unsafe.SliceData(ctrl)), pos))
 
 		// Draw a key
 		key := t.unpackKey(node)
@@ -98,7 +110,15 @@ func (g *PrettyWriter) walkJSON() {
 		switch node.kind & 0x1F {
 		case prettyViewKindRoot:
 			// TODO implement passing.
-			g.buf = append(g.buf, "NULL"...)
+			g.buf = append(g.buf, '{')
+			if node.misc == math.MaxUint32 {
+				g.buf = append(g.buf, '}')
+				break
+			}
+			old = false
+			stack = append(stack, pos)
+			pos = int(node.misc)
+			continue
 		case prettyViewKindValueBool:
 			if node.kind>>8 != 0 {
 				g.buf = append(g.buf, "true"...)
@@ -293,7 +313,7 @@ func (g *PrettyWriter) walkJSON() {
 			g.buf = append(g.buf, ']')
 		case prettyViewKindValueUint64Slice:
 			off := node.kind >> 32
-			src := unsafe.Slice((*uint)(unsafe.Add(unsafe.Pointer(unsafe.SliceData(t.data)), off)), node.misc)
+			src := unsafe.Slice((*uint64)(unsafe.Add(unsafe.Pointer(unsafe.SliceData(t.data)), off)), node.misc)
 			g.buf = append(g.buf, '[')
 			for i, v := range src {
 				if i > 0 {
@@ -343,6 +363,16 @@ func (g *PrettyWriter) walkJSON() {
 		}
 
 		if node.next == 0 {
+			for len(stack) > 0 {
+				g.buf = append(g.buf, '}')
+				pos, stack = stack[len(stack)-1], stack[:len(stack)-1]
+				node = (*prettyViewNode)(unsafe.Add(unsafe.Pointer(unsafe.SliceData(ctrl)), pos))
+				if node.next != 0 {
+					pos = int(node.next)
+					old = true
+					continue mainLoop
+				}
+			}
 			break
 		}
 		pos = int(node.next)

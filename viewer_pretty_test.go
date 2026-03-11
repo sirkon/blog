@@ -3,6 +3,7 @@ package blog
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"math"
 	"os"
 	"slices"
@@ -17,6 +18,16 @@ import (
 func TestNewPrettyWriter(t *testing.T) {
 	dur := time.Second * 3 / 2
 	core.InsertLocationsOn()
+
+	type GroupFlat struct {
+		Text   string `json:"text"`
+		Weight int    `json:"weight"`
+	}
+	type GroupTree struct {
+		Depth int       `json:"depth"`
+		Group GroupFlat `json:"group"`
+		Rest  string    `json:"rest"`
+	}
 
 	type Sample struct {
 		BoolTrue       bool      `json:"bool_true"`
@@ -66,6 +77,10 @@ func TestNewPrettyWriter(t *testing.T) {
 		BoolSliceShort       []bool    `json:"bools_short"`
 		BoolSliceShortLarger []bool    `json:"bools_short_larger"`
 		BoolSlice            []bool    `json:"bools"`
+		GroupEmpty           struct{}  `json:"group_empty"`
+		GroupFlat            GroupFlat `json:"group_flat"`
+		GroupTree            GroupTree `json:"group_tree"`
+		End                  bool      `json:"end"`
 	}
 
 	sample := &Sample{
@@ -85,7 +100,9 @@ func TestNewPrettyWriter(t *testing.T) {
 		Uint8:                1,
 		Uint16:               2,
 		Uint32:               3,
+		Uint64Short:          0,
 		Uint64:               math.MaxUint64,
+		Float32:              0,
 		Float64:              math.Pi,
 		StrEmpty:             "",
 		StrVeryShort:         "12345",
@@ -113,6 +130,19 @@ func TestNewPrettyWriter(t *testing.T) {
 		BoolSliceShort:       []bool{true, false},
 		BoolSliceShortLarger: slices.Repeat([]bool{true, true, false}, 22),
 		BoolSlice:            slices.Repeat([]bool{true, false, true, true}, 22),
+		GroupFlat: GroupFlat{
+			Text:   "group text",
+			Weight: 1,
+		},
+		GroupTree: GroupTree{
+			Depth: 2,
+			Group: GroupFlat{
+				Text:   "subgroup",
+				Weight: 100,
+			},
+			Rest: "rest",
+		},
+		End: true,
 	}
 
 	w := NewPrettyWriter(os.Stdout)
@@ -121,6 +151,9 @@ func TestNewPrettyWriter(t *testing.T) {
 		t.Fatal(core.WrapError(err, "create logger"))
 	}
 
+	err = core.NewError("error").Bool("flag", true)
+	err = fmt.Errorf("foreign wrap: %w", err)
+	err = core.WrapError(err, "wrap").Str("text", "this is fun")
 	logger.Error(context.Background(), "test",
 		core.Bool("bool_true", sample.BoolTrue),
 		core.Bool("bool_false", sample.BoolFalse),
@@ -170,9 +203,21 @@ func TestNewPrettyWriter(t *testing.T) {
 		core.Bools("bools_short", sample.BoolSliceShort),
 		core.Bools("bools_short_larger", sample.BoolSliceShortLarger),
 		core.Bools("bools", sample.BoolSlice),
+
+		core.Group("group_empty"),
+		core.Group("group_flat", core.Str("text", "group text"), core.Int("weight", 1)),
+		core.Group("group_tree",
+			core.Int("depth", 2),
+			core.Group("group", core.Str("text", "subgroup"), core.Int("weight", 100)),
+			core.Str("rest", "rest"),
+		),
+
+		core.Bool("end", true),
+		core.Err(err),
 	)
 
 	w.buf = w.buf[:0]
+	w.browseCtrl()
 	w.walkJSON()
 
 	var got Sample

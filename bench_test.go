@@ -19,15 +19,19 @@ var (
 	binlog        *blog.Logger
 	txtCtxLogger  *slog.Logger
 	discardLogger *blog.Logger
+	blogjlog      *blog.Logger
 
-	blogFile   *os.File
-	txtCtxFile *os.File
-	justFile   *os.File
+	blogFile     *os.File
+	blogJSONFile *os.File
+	txtCtxFile   *os.File
+	justFile     *os.File
 
 	text = bytes.Repeat([]byte{0}, 256)
 )
 
 func TestMain(t *testing.M) {
+	beer.InsertLocationsOff()
+
 	var files []*os.File
 	defer func() {
 		for _, file := range files {
@@ -42,10 +46,12 @@ func TestMain(t *testing.M) {
 	files = append(files, txtCtxFile)
 	justFile = createFile("just.log")
 	files = append(files, justFile)
+	blogJSONFile = createFile("blogjson.log")
 
 	binlog, _ = blog.NewLogger(blog.NewSyncWriter(blogFile), blog.OptionLogFromLevel(blog.LevelDebug))
 	txtCtxLogger = slog.New(slog.NewJSONHandler(txtCtxFile, &slog.HandlerOptions{}))
 	discardLogger, _ = blog.NewLogger(blog.NewSyncWriter(io.Discard))
+	blogjlog, _ = blog.NewLogger(blog.NewPrettyWriter(blogJSONFile))
 
 	t.Run()
 }
@@ -64,6 +70,23 @@ func BenchmarkBlog(b *testing.B) {
 			Flt64("e", math.E)
 
 		binlog.Error(nil, "failed to do something", blog.Err(err))
+	}
+}
+
+func BenchmarkBlogToJSON(b *testing.B) {
+	b.ReportAllocs()
+	for b.Loop() {
+		err := beer.New("this is an error").
+			Bytes("bytes", []byte{1, 2, 3}).
+			Str("text-bytes", "Hello World!")
+		err = beer.Wrap(err, "check error").
+			Int("count", 333).
+			Bool("is-wrap-layer", true)
+		err = beer.Just(err).
+			Flt64("pi", math.Pi).
+			Flt64("e", math.E)
+
+		blogjlog.Error(nil, "failed to do something", blog.Err(err))
 	}
 }
 
@@ -103,7 +126,6 @@ func BenchmarkAssembleAndFormattingCost(b *testing.B) {
 
 		discardLogger.Error(nil, "failed to do something", blog.Err(err))
 	}
-	blog.NewLogger(blog.NewSyncWriter(blogFile))
 }
 
 func BenchmarkAssembleCost(b *testing.B) {

@@ -186,27 +186,26 @@ func (p *packedContextDeconstruct) StrSlice(key []byte, seq [][]byte) {
 }
 
 func (p *packedContextDeconstruct) EnterGroup(key []byte) {
-	p.stack = append(p.stack, p.prev)
 	p.prev = p.tree.AddObjectRoot(p.prev, key)
+	p.stack = append(p.stack, p.prev)
 }
 
 func (p *packedContextDeconstruct) LeaveGroup() {
+	p.tree.CloseObjectRoot(p.prev)
 	p.prev = p.stack[len(p.stack)-1]
 	p.stack = p.stack[:len(p.stack)-1]
-	p.tree.CloseObjectRoot(p.prev)
 }
 
 func (p *packedContextDeconstruct) EnterError(key []byte) {
-	p.stack = append(p.stack, p.prev)
 	p.prev = p.tree.AddObjectRoot(p.prev, key)
-	p.errors = append(p.errors, p.prev)
 	p.stack = append(p.stack, p.prev)
-	ctxKey := core.PredefinedKeys[core.ValueErrorContext>>8]
+	p.errors = append(p.errors, p.prev)
+	ctxKey := "@context"
 	p.prev = p.tree.AddObjectRoot(p.prev, unsafe.Slice(unsafe.StringData(ctxKey), len(ctxKey)))
+	p.stack = append(p.stack, p.prev)
 }
 
 func (p *packedContextDeconstruct) EnterErrorStage(state core.ErrorProcessingStage, text []byte) {
-	p.stack = append(p.stack, p.prev)
 	p.stageBuf = p.stageBuf[:0]
 	switch state {
 	case core.ErrorProcessingStageNew:
@@ -219,6 +218,7 @@ func (p *packedContextDeconstruct) EnterErrorStage(state core.ErrorProcessingSta
 		p.stageBuf = append(p.stageBuf, "CTX"...)
 	}
 	p.prev = p.tree.AddObjectRoot(p.prev, p.stageBuf)
+	p.stack = append(p.stack, p.prev)
 }
 
 func (p *packedContextDeconstruct) ErrorStageLocation(file []byte, line int) {
@@ -226,7 +226,7 @@ func (p *packedContextDeconstruct) ErrorStageLocation(file []byte, line int) {
 	p.stageBuf = append(p.stageBuf, file...)
 	p.stageBuf = append(p.stageBuf, ':')
 	p.stageBuf = strconv.AppendInt(p.stageBuf, int64(line), 10)
-	locText := core.PredefinedKeys[core.ValueErrorStageLocation>>8]
+	locText := "@location"
 	p.prev = p.tree.AddString(
 		p.prev,
 		unsafe.Slice(unsafe.StringData(locText), len(locText)),
@@ -235,14 +235,14 @@ func (p *packedContextDeconstruct) ErrorStageLocation(file []byte, line int) {
 }
 
 func (p *packedContextDeconstruct) LeaveErrorStage() {
+	p.tree.CloseObjectRoot(p.prev)
 	p.prev = p.stack[len(p.stack)-1]
 	p.stack = p.stack[:len(p.stack)-1]
-	p.tree.CloseObjectRoot(p.prev)
 }
 
 func (p *packedContextDeconstruct) LeaveError(text []byte) {
 	// Add @text
-	textText := core.PredefinedKeys[core.ValueErrorText>>8]
+	textText := "@text"
 	p.prev = p.tree.AddString(
 		p.prev,
 		unsafe.Slice(unsafe.StringData(textText), len(textText)),

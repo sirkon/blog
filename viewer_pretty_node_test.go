@@ -20,8 +20,8 @@ func TestNodes(t *testing.T) {
 	byt := func(s string) []byte {
 		return []byte(s)
 	}
-	getNode := func(t *packedTree, off int) *prettyViewObjNode {
-		return (*prettyViewObjNode)(unsafe.Add(unsafe.Pointer(unsafe.SliceData(t.ctrl)), 0))
+	getNode := func(t *packedTree, off int) *prettyViewNode {
+		return (*prettyViewNode)(unsafe.Add(unsafe.Pointer(unsafe.SliceData(t.ctrl)), 0))
 	}
 
 	t.Run("key unpack", func(t *testing.T) {

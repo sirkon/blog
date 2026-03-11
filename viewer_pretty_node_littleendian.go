@@ -14,7 +14,7 @@ func (t *packedTree) AddBoolArray(prev int, key []byte, data []bool) int {
 	t.ensureSpace()
 	base := unsafe.Pointer(unsafe.SliceData(t.ctrl))
 	t.linkToPrev(prev, off)
-	respt := (*prettyViewObjNode)(unsafe.Add(base, off))
+	respt := (*prettyViewNode)(unsafe.Add(base, off))
 
 	if len(data) > 84 {
 		// Do this straightforwardly.
@@ -38,12 +38,12 @@ func (t *packedTree) AddBoolArray(prev int, key []byte, data []bool) int {
 			// to output an array of booleans LMAO.
 			t.data = binary.LittleEndian.AppendUint64(t.data, dst)
 		}
-		*respt = prettyViewObjNode{
+		*respt = prettyViewNode{
 			key:  t.packKey(key),
 			kind: prettyViewKindValueBoolSlice | prettyViewKind(dataOff<<32),
 			misc: uint32(len(data)),
 		}
-		t.ctrl = unsafe.Slice((*byte)(base), off+prettyViewObjNodeSize)
+		t.ctrl = unsafe.Slice((*byte)(base), off+prettyViewNodeSize)
 		return off
 	}
 
@@ -64,12 +64,12 @@ func (t *packedTree) AddBoolArray(prev int, key []byte, data []bool) int {
 	}
 	kindMask := (uint64(len(data)) << 57 >> 52) | part1<<12
 	misc := part1>>52 | part2<<12
-	*respt = prettyViewObjNode{
+	*respt = prettyViewNode{
 		key:  t.packKey(key),
 		kind: prettyViewKindValueBoolSliceShort | prettyViewKind(kindMask),
 		misc: uint32(misc),
 	}
-	t.ctrl = unsafe.Slice((*byte)(base), off+prettyViewObjNodeSize)
+	t.ctrl = unsafe.Slice((*byte)(base), off+prettyViewNodeSize)
 	return off
 }
 
@@ -88,7 +88,7 @@ func (t *packedTree) packKey(key []byte) uint64 {
 
 // Big endian one may require different directions and values of bit shifts.
 // Also binary.BigEndian instead of binary.LittleEndian.
-func (t *packedTree) packStringValue(n *prettyViewObjNode, s []byte) int {
+func (t *packedTree) packStringValue(n *prettyViewNode, s []byte) int {
 	switch len(s) {
 	case 0:
 		// bits are zero, everything is zero. This means the string is empty. Do nothing here.
@@ -119,7 +119,7 @@ func (t *packedTree) packStringValue(n *prettyViewObjNode, s []byte) int {
 
 // Big endian one may require different directions and values of bit shifts.
 // Also, binary.BigEndian instead of binary.LittleEndian.
-func (t *packedTree) packBytesValue(n *prettyViewObjNode, s []byte) int {
+func (t *packedTree) packBytesValue(n *prettyViewNode, s []byte) int {
 	switch len(s) {
 	case 0:
 		// bits are zero, everything is zero. This means the string is empty. Do nothing here.

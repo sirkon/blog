@@ -36,7 +36,7 @@ func JustError(err error) *Error {
 	res.payload = AppendSerialized(res.payload, attr)
 
 	if insertLocations {
-		res.appendLocation(3)
+		res.appendLocation(2)
 	}
 	return res
 }
