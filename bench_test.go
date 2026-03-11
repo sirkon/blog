@@ -19,12 +19,13 @@ var (
 	binlog        *blog.Logger
 	txtCtxLogger  *slog.Logger
 	discardLogger *blog.Logger
-	blogjlog      *blog.Logger
+	blogpLogger   *blog.Logger
+	blogjLogger   *blog.Logger
 
-	blogFile     *os.File
-	blogJSONFile *os.File
-	txtCtxFile   *os.File
-	justFile     *os.File
+	blogFile           *os.File
+	blogTextPrettyFile *os.File
+	txtCtxFile         *os.File
+	justFile           *os.File
 
 	text = bytes.Repeat([]byte{0}, 256)
 )
@@ -46,12 +47,12 @@ func TestMain(t *testing.M) {
 	files = append(files, txtCtxFile)
 	justFile = createFile("just.log")
 	files = append(files, justFile)
-	blogJSONFile = createFile("blogjson.log")
+	blogTextPrettyFile = createFile("blogpretty.log")
 
 	binlog, _ = blog.NewLogger(blog.NewSyncWriter(blogFile), blog.OptionLogFromLevel(blog.LevelDebug))
 	txtCtxLogger = slog.New(slog.NewJSONHandler(txtCtxFile, &slog.HandlerOptions{}))
 	discardLogger, _ = blog.NewLogger(blog.NewSyncWriter(io.Discard))
-	blogjlog, _ = blog.NewLogger(blog.NewPrettyWriter(blogJSONFile))
+	blogpLogger, _ = blog.NewLogger(blog.NewPrettyWriter(blogTextPrettyFile))
 
 	t.Run()
 }
@@ -73,7 +74,7 @@ func BenchmarkBlog(b *testing.B) {
 	}
 }
 
-func BenchmarkBlogToJSON(b *testing.B) {
+func BenchmarkBlogPretty(b *testing.B) {
 	b.ReportAllocs()
 	for b.Loop() {
 		err := beer.New("this is an error").
@@ -86,7 +87,7 @@ func BenchmarkBlogToJSON(b *testing.B) {
 			Flt64("pi", math.Pi).
 			Flt64("e", math.E)
 
-		blogjlog.Error(nil, "failed to do something", blog.Err(err))
+		blogpLogger.Error(nil, "failed to do something", blog.Err(err))
 	}
 }
 
