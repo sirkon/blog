@@ -205,6 +205,7 @@ func LogPanicInfo(v any) Attr {
 //   - CRC32 of record content (starting from time to the end).
 //   - UVARINT(record_length)
 //   - ----------------------
+//   - Version (2 bytes)
 //   - Time (8 bytes)
 //   - Level (1 byte)
 //   - ErrorStageLocation, either just 0 or UVARINT(len(file_name)) | file_name | UVARINT(LINE)
