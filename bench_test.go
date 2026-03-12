@@ -10,9 +10,13 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
+
+	"github.com/rs/zerolog"
 
 	"github.com/sirkon/blog"
 	"github.com/sirkon/blog/beer"
+	"github.com/sirkon/blog/internal/core"
 )
 
 var (
@@ -20,12 +24,13 @@ var (
 	txtCtxLogger  *slog.Logger
 	discardLogger *blog.Logger
 	blogpLogger   *blog.Logger
-	blogjLogger   *blog.Logger
+	zlogLogger    zerolog.Logger
 
 	blogFile           *os.File
 	blogTextPrettyFile *os.File
 	txtCtxFile         *os.File
 	justFile           *os.File
+	zlogFile           *os.File
 
 	text = bytes.Repeat([]byte{0}, 256)
 )
@@ -48,11 +53,15 @@ func TestMain(t *testing.M) {
 	justFile = createFile("just.log")
 	files = append(files, justFile)
 	blogTextPrettyFile = createFile("blogpretty.log")
+	files = append(files, blogTextPrettyFile)
+	zlogFile = createFile("zlog.log")
+	files = append(files, zlogFile)
 
-	binlog, _ = blog.NewLogger(blog.NewSyncWriter(blogFile), blog.OptionLogFromLevel(blog.LevelDebug))
+	binlog, _ = blog.NewLogger(blog.NewSyncWriter(io.Discard), blog.OptionLogFromLevel(blog.LevelDebug))
 	txtCtxLogger = slog.New(slog.NewJSONHandler(txtCtxFile, &slog.HandlerOptions{}))
 	discardLogger, _ = blog.NewLogger(blog.NewSyncWriter(io.Discard))
 	blogpLogger, _ = blog.NewLogger(blog.NewPrettyWriter(blogTextPrettyFile))
+	zlogLogger = zerolog.New(io.Discard).With().Timestamp().Logger()
 
 	t.Run()
 }
@@ -72,6 +81,68 @@ func BenchmarkBlog(b *testing.B) {
 
 		binlog.Error(nil, "failed to do something", blog.Err(err))
 	}
+}
+
+func BenchmarkBlogNoErrors(b *testing.B) {
+	b.ReportAllocs()
+
+	b.Run("text", func(b *testing.B) {
+		for b.Loop() {
+			binlog.Error(nil, "failed to do something")
+		}
+	})
+
+	b.Run("text + 2 contexts", func(b *testing.B) {
+		for b.Loop() {
+			binlog.Error(nil, "failed to do something",
+				core.Int("count", 4096),
+				core.Str("description", "info"),
+			)
+		}
+	})
+
+	b.Run("text + 5 contexts", func(b *testing.B) {
+		for b.Loop() {
+			binlog.Error(nil, "failed to do something",
+				core.Bool("is-wrap-layer", true),
+				core.Int("count", 4096),
+				core.Str("description", "info"),
+				core.Int("weight", 1234),
+				core.Duration("duration", time.Second),
+			)
+		}
+	})
+}
+
+func BenchmarkZerologNoErrors(b *testing.B) {
+	b.ReportAllocs()
+
+	b.Run("text", func(b *testing.B) {
+		for b.Loop() {
+			zlogLogger.Error().Msg("failed to do something")
+		}
+	})
+
+	b.Run("text + 2 contexts", func(b *testing.B) {
+		for b.Loop() {
+			zlogLogger.Error().
+				Int("count", 4096).
+				Str("description", "info").
+				Msg("failed to do something")
+		}
+	})
+
+	b.Run("text + 5 contexts", func(b *testing.B) {
+		for b.Loop() {
+			zlogLogger.Error().
+				Bool("is-wrap-layer", true).
+				Int("count", 4096).
+				Str("description", "info").
+				Int("weight", 1234).
+				Dur("duration", time.Second).
+				Msg("failed to do something")
+		}
+	})
 }
 
 func BenchmarkBlogPretty(b *testing.B) {
@@ -99,6 +170,17 @@ func BenchmarkTxtContext(b *testing.B) {
 		err = fmt.Errorf("context pi[%g] e[%g]: %w", math.Pi, math.E, err)
 
 		txtCtxLogger.Error("failed to do something", slog.Any("err", err))
+	}
+}
+
+func BenchmarkTxtContextZerolog(b *testing.B) {
+	b.ReportAllocs()
+	for b.Loop() {
+		err := fmt.Errorf("this is an error bytes[%v] text-bytes[%s]", []byte{1, 2, 3}, "Hello World!")
+		err = fmt.Errorf("check error count[%d] is-wrap-layer[%v]: %w", 333, true, err)
+		err = fmt.Errorf("context pi[%g] e[%g]: %w", math.Pi, math.E, err)
+
+		zlogLogger.Error().Err(err).Msg("failed to do something")
 	}
 }
 
