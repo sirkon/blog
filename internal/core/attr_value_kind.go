@@ -133,7 +133,7 @@ func (k ValueKind) String() string {
 	case ValueKindError:
 		return "beer.Error"
 	case ValueKindErrorEmbed:
-		return "ForeignWrap(beef.Error)"
+		return "ForeignWrap(beer.Error)"
 	case ValueKindSliceBool:
 		return "[]bool"
 	case ValueKindSliceInt:

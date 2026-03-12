@@ -27,7 +27,7 @@ func newError(msg string) *Error {
 	}
 
 	if insertLocations {
-		res.appendLocation(3)
+		res.appendLocation(4)
 	}
 
 	return res

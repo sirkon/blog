@@ -253,3 +253,8 @@ func (e *Error) Is(target error) bool {
 
 	return errors.Is(e.wrap, target)
 }
+
+// PayloadLen for testing purposes.
+func PayloadLen(e error) int {
+	return len(e.(*Error).payload)
+}

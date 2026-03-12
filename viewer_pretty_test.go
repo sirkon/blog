@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math"
 	"os"
 	"slices"
@@ -17,7 +18,7 @@ import (
 
 func TestNewPrettyWriter(t *testing.T) {
 	dur := time.Second * 3 / 2
-	core.InsertLocationsOn()
+	core.InsertLocationsOff()
 
 	type GroupFlat struct {
 		Text   string `json:"text"`
@@ -27,6 +28,10 @@ func TestNewPrettyWriter(t *testing.T) {
 		Depth int       `json:"depth"`
 		Group GroupFlat `json:"group"`
 		Rest  string    `json:"rest"`
+	}
+	type Error struct {
+		Text    string                    `json:"@text"`
+		Context map[string]map[string]any `json:"@context"`
 	}
 
 	type Sample struct {
@@ -81,8 +86,14 @@ func TestNewPrettyWriter(t *testing.T) {
 		GroupFlat            GroupFlat `json:"group_flat"`
 		GroupTree            GroupTree `json:"group_tree"`
 		End                  bool      `json:"end"`
+		Err                  Error     `json:"err"`
+		Error                string    `json:"error"`
 	}
 
+	err := error(core.NewError("error").Bool("flag", true))
+	err = fmt.Errorf("foreign wrap: %w", err)
+	err = core.WrapError(err, "wrap").Str("text", "this is fun")
+	err = core.JustError(err).Str("ctxtext", "ctx")
 	sample := &Sample{
 		BoolTrue:             true,
 		BoolFalse:            false,
@@ -143,17 +154,32 @@ func TestNewPrettyWriter(t *testing.T) {
 			Rest: "rest",
 		},
 		End: true,
+		Err: Error{
+			Text: "wrap: foreign wrap: error",
+			Context: map[string]map[string]any{
+				"NEW: error": {
+					//"@location": curFile + ":96",
+					"flag": true,
+				},
+				"WRAP: wrap": {
+					//"@location": curFile + ":98",
+					"text": "this is fun",
+				},
+				"CTX": {
+					//"@location": curFile + ":99",
+					"ctxtext": "ctx",
+				},
+			},
+		},
+		Error: "EOF",
 	}
 
 	w := NewPrettyWriter(os.Stdout)
-	logger, err := NewLogger(w)
-	if err != nil {
-		t.Fatal(core.WrapError(err, "create logger"))
+	logger, lerr := NewLogger(w, core.OptionLogLocations())
+	if lerr != nil {
+		t.Fatal(core.WrapError(lerr, "create logger"))
 	}
 
-	err = core.NewError("error").Bool("flag", true)
-	err = fmt.Errorf("foreign wrap: %w", err)
-	err = core.WrapError(err, "wrap").Str("text", "this is fun")
 	logger.Error(context.Background(), "test",
 		core.Bool("bool_true", sample.BoolTrue),
 		core.Bool("bool_false", sample.BoolFalse),
@@ -214,13 +240,13 @@ func TestNewPrettyWriter(t *testing.T) {
 
 		core.Bool("end", true),
 		core.Err(err),
+		core.ErrorAttr("error", io.EOF),
 	)
 	fmt.Println(len(w.view.tree.ctrl), cap(w.view.tree.ctrl), w.view.tree.clen)
 
 	w.buf = w.buf[:0]
 	w.browseCtrl()
 	w.walkJSON()
-	fmt.Println(len(w.view.tree.ctrl), cap(w.view.tree.ctrl), w.view.tree.clen)
 
 	var got Sample
 	if err := json.Unmarshal(w.buf, &got); err != nil {

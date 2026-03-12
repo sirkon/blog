@@ -10,13 +10,9 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
-
-	"github.com/rs/zerolog"
 
 	"github.com/sirkon/blog"
 	"github.com/sirkon/blog/beer"
-	"github.com/sirkon/blog/internal/core"
 )
 
 var (
@@ -24,7 +20,7 @@ var (
 	txtCtxLogger  *slog.Logger
 	discardLogger *blog.Logger
 	blogpLogger   *blog.Logger
-	zlogLogger    zerolog.Logger
+	bufferLogger  *blog.Logger
 
 	blogFile           *os.File
 	blogTextPrettyFile *os.File
@@ -57,11 +53,11 @@ func TestMain(t *testing.M) {
 	zlogFile = createFile("zlog.log")
 	files = append(files, zlogFile)
 
-	binlog, _ = blog.NewLogger(blog.NewSyncWriter(io.Discard), blog.OptionLogFromLevel(blog.LevelDebug))
+	binlog, _ = blog.NewLogger(blog.NewSyncWriter(blogFile), blog.OptionLogFromLevel(blog.LevelDebug))
 	txtCtxLogger = slog.New(slog.NewJSONHandler(txtCtxFile, &slog.HandlerOptions{}))
 	discardLogger, _ = blog.NewLogger(blog.NewSyncWriter(io.Discard))
 	blogpLogger, _ = blog.NewLogger(blog.NewPrettyWriter(blogTextPrettyFile))
-	zlogLogger = zerolog.New(io.Discard).With().Timestamp().Logger()
+	bufferLogger, _ = blog.NewLogger(newBufferWriter())
 
 	t.Run()
 }
@@ -83,85 +79,6 @@ func BenchmarkBlog(b *testing.B) {
 	}
 }
 
-func BenchmarkBlogNoErrors(b *testing.B) {
-	b.ReportAllocs()
-
-	b.Run("text", func(b *testing.B) {
-		for b.Loop() {
-			binlog.Error(nil, "failed to do something")
-		}
-	})
-
-	b.Run("text + 2 contexts", func(b *testing.B) {
-		for b.Loop() {
-			binlog.Error(nil, "failed to do something",
-				core.Int("count", 4096),
-				core.Str("description", "info"),
-			)
-		}
-	})
-
-	b.Run("text + 5 contexts", func(b *testing.B) {
-		for b.Loop() {
-			binlog.Error(nil, "failed to do something",
-				core.Bool("is-wrap-layer", true),
-				core.Int("count", 4096),
-				core.Str("description", "info"),
-				core.Int("weight", 1234),
-				core.Duration("duration", time.Second),
-			)
-		}
-	})
-}
-
-func BenchmarkZerologNoErrors(b *testing.B) {
-	b.ReportAllocs()
-
-	b.Run("text", func(b *testing.B) {
-		for b.Loop() {
-			zlogLogger.Error().Msg("failed to do something")
-		}
-	})
-
-	b.Run("text + 2 contexts", func(b *testing.B) {
-		for b.Loop() {
-			zlogLogger.Error().
-				Int("count", 4096).
-				Str("description", "info").
-				Msg("failed to do something")
-		}
-	})
-
-	b.Run("text + 5 contexts", func(b *testing.B) {
-		for b.Loop() {
-			zlogLogger.Error().
-				Bool("is-wrap-layer", true).
-				Int("count", 4096).
-				Str("description", "info").
-				Int("weight", 1234).
-				Dur("duration", time.Second).
-				Msg("failed to do something")
-		}
-	})
-}
-
-func BenchmarkBlogPretty(b *testing.B) {
-	b.ReportAllocs()
-	for b.Loop() {
-		err := beer.New("this is an error").
-			Bytes("bytes", []byte{1, 2, 3}).
-			Str("text-bytes", "Hello World!")
-		err = beer.Wrap(err, "check error").
-			Int("count", 333).
-			Bool("is-wrap-layer", true)
-		err = beer.Just(err).
-			Flt64("pi", math.Pi).
-			Flt64("e", math.E)
-
-		blogpLogger.Error(nil, "failed to do something", blog.Err(err))
-	}
-}
-
 func BenchmarkTxtContext(b *testing.B) {
 	b.ReportAllocs()
 	for b.Loop() {
@@ -173,14 +90,14 @@ func BenchmarkTxtContext(b *testing.B) {
 	}
 }
 
-func BenchmarkTxtContextZerolog(b *testing.B) {
+func BenchmarkTxtNoContext(b *testing.B) {
 	b.ReportAllocs()
 	for b.Loop() {
-		err := fmt.Errorf("this is an error bytes[%v] text-bytes[%s]", []byte{1, 2, 3}, "Hello World!")
-		err = fmt.Errorf("check error count[%d] is-wrap-layer[%v]: %w", 333, true, err)
-		err = fmt.Errorf("context pi[%g] e[%g]: %w", math.Pi, math.E, err)
+		err := fmt.Errorf("this is an error")
+		err = fmt.Errorf("check error: %w", err)
+		err = fmt.Errorf("context: %w", err)
 
-		zlogLogger.Error().Err(err).Msg("failed to do something")
+		txtCtxLogger.Error("failed to do something", slog.Any("err", err))
 	}
 }
 
@@ -195,38 +112,44 @@ func BenchmarkBlogTxtContext(b *testing.B) {
 	}
 }
 
-func BenchmarkAssembleAndFormattingCost(b *testing.B) {
+func BenchmarkBlogTxtNoContext(b *testing.B) {
+	b.ReportAllocs()
 	for b.Loop() {
-		err := beer.New("this is an error").
-			Bytes("bytes", []byte{1, 2, 3}).
-			Str("text-bytes", "Hello World!")
-		err = beer.Wrap(err, "check error").
-			Int("count", 333).
-			Bool("is-wrap-layer", true)
-		err = beer.Just(err).
-			Flt64("pi", math.Pi).
-			Flt64("e", math.E)
+		err := fmt.Errorf("this is an error")
+		err = fmt.Errorf("check error: %w", err)
+		err = fmt.Errorf("context: %w", err)
 
-		discardLogger.Error(nil, "failed to do something", blog.Err(err))
+		binlog.Error(nil, "failed to do something", blog.Err(err))
 	}
 }
 
-func BenchmarkAssembleCost(b *testing.B) {
-	for b.Loop() {
-		err := beer.New("this is an error").
-			Bytes("bytes", []byte{1, 2, 3}).
-			Str("text-bytes", "Hello World!")
-		err = beer.Wrap(err, "check error").
-			Int("count", 333).
-			Bool("is-wrap-layer", true)
-		err = beer.Just(err).
-			Flt64("pi", math.Pi).
-			Flt64("e", math.E)
-
-		if err == nil {
-			panic("must not be nil")
+func BenchmarkBufferWriteCost(b *testing.B) {
+	b.Run("beer", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			err := beer.New("this is an error").
+				Bytes("bytes", []byte{1, 2, 3}).
+				Str("text-bytes", "Hello World!")
+			err = beer.Wrap(err, "check error").
+				Int("count", 333).
+				Bool("is-wrap-layer", true)
+			err = beer.Just(err).
+				Flt64("pi", math.Pi).
+				Flt64("e", math.E)
+			bufferLogger.Error(nil, "failed to do something", blog.Err(err))
 		}
-	}
+	})
+
+	b.Run("txt-no-context", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			err := fmt.Errorf("this is an error")
+			err = fmt.Errorf("check error: %w", err)
+			err = fmt.Errorf("context: %w", err)
+
+			bufferLogger.Error(nil, "failed to do something", blog.Err(err))
+		}
+	})
 }
 
 func BenchmarkWriteCost(b *testing.B) {
@@ -305,5 +228,20 @@ type loggerSizeComputer string
 
 func (l loggerSizeComputer) Write(p []byte) (n int, err error) {
 	fmt.Println(string(l), "write size:", len(p))
+	return len(p), nil
+}
+
+type bufferWrite struct {
+	buf []byte
+}
+
+func newBufferWriter() *bufferWrite {
+	return &bufferWrite{
+		buf: make([]byte, 16384),
+	}
+}
+
+func (b *bufferWrite) Write(p []byte) (n int, err error) {
+	copy(b.buf, p)
 	return len(p), nil
 }

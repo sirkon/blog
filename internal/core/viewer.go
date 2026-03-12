@@ -128,7 +128,7 @@ func ProcessRecord(line []byte, viewer RecordViewer) (err error) {
 	// Get location.
 	if record[9] != 0 {
 		var filename []byte
-		filename, record = mustReadString(record)
+		filename, record = mustReadString(record[9:])
 		length, record = mustReadUvarint(record)
 		viewer.Location(filename, length)
 	} else {

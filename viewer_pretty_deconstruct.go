@@ -241,6 +241,10 @@ func (p *packedContextDeconstruct) LeaveErrorStage() {
 }
 
 func (p *packedContextDeconstruct) LeaveError(text []byte) {
+	// Close context
+	p.prev = p.stack[len(p.stack)-1]
+	p.stack = p.stack[:len(p.stack)-1]
+
 	// Add @text
 	textText := "@text"
 	p.prev = p.tree.AddString(
@@ -248,6 +252,7 @@ func (p *packedContextDeconstruct) LeaveError(text []byte) {
 		unsafe.Slice(unsafe.StringData(textText), len(textText)),
 		text,
 	)
+	p.errors = append(p.errors, p.prev)
 
 	// Close error
 	p.prev = p.stack[len(p.stack)-1]

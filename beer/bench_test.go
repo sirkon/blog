@@ -13,20 +13,30 @@ import (
 
 var count int
 
-func BenchmarkBeerWrapFixed(b *testing.B) {
+func BenchmarkBeerInnerChain(b *testing.B) {
 	b.ReportAllocs()
 
 	for range b.N {
-		err := getBeerWrapErrorNoContext()
-		count += len(err.Error())
+		err := getBeerWrapErrorInner()
+		count += core.PayloadLen(err)
 	}
 }
 
-func BenchmarkBeerWrapFixedNoError(b *testing.B) {
+func BenchmarkBeerForeignRootAndInnerChain(b *testing.B) {
 	b.ReportAllocs()
 
 	for range b.N {
-		_ = getBeerWrapErrorNoContext()
+		err := getBeerWrapErrorInnerForeignRoot()
+		count += core.PayloadLen(err)
+	}
+}
+
+func BenchmarkBeerWrapInnerForeignIntermixed(b *testing.B) {
+	b.ReportAllocs()
+
+	for range b.N {
+		err := getBeerInnerForeignWrapIntermixed()
+		count += len(err.Error())
 	}
 }
 
@@ -44,7 +54,7 @@ func BenchmarkBeerWrapf(b *testing.B) {
 
 	for range b.N {
 		err := getBeerWrapf()
-		count += len(err.Error())
+		count += core.PayloadLen(err)
 	}
 }
 
@@ -53,7 +63,7 @@ func BenchmarkBeerWrapContext(b *testing.B) {
 
 	for range b.N {
 		err := getBeerWrapContext()
-		count += len(err.Error())
+		count += core.PayloadLen(err)
 	}
 }
 
@@ -71,7 +81,7 @@ func BenchmarkBeerWrapLongContext(b *testing.B) {
 
 	for range b.N {
 		err := getBeerWrapLargerContext()
-		count += len(err.Error())
+		count += core.PayloadLen(err)
 	}
 }
 
@@ -84,11 +94,31 @@ func BenchmarkFmtErrorfLongContext(b *testing.B) {
 	}
 }
 
-func getBeerWrapErrorNoContext() error {
+func getBeerWrapErrorInner() error {
 	var err error = core.NewError("some error")
 	err = core.WrapError(err, "wrap 1")
 	err = core.WrapError(err, "wrap 2")
 	err = core.WrapError(err, "wrap 3")
+	err = core.WrapError(err, "wrap 4")
+
+	return err
+}
+
+func getBeerWrapErrorInnerForeignRoot() error {
+	var err error = io.EOF
+	err = core.WrapError(err, "wrap 1")
+	err = core.WrapError(err, "wrap 2")
+	err = core.WrapError(err, "wrap 3")
+	err = core.WrapError(err, "wrap 4")
+
+	return err
+}
+
+func getBeerInnerForeignWrapIntermixed() error {
+	var err error = core.NewError("some error")
+	err = core.WrapError(err, "wrap 1")
+	err = core.WrapError(err, "wrap 2")
+	err = fmt.Errorf("wrap 3: %w", err)
 	err = core.WrapError(err, "wrap 4")
 
 	return err

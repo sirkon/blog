@@ -82,7 +82,7 @@ func (l *Logger) Warn(ctx context.Context, msg string, attrs ...Attr) {
 
 // Error logs at [LoggingLevelError].
 func (l *Logger) Error(ctx context.Context, msg string, attrs ...Attr) {
-	l.logLevel(ctx, LoggingLevelInfo, msg, attrs...)
+	l.logLevel(ctx, LoggingLevelError, msg, attrs...)
 }
 
 // With returns a Logger that includes the given attributes
@@ -270,7 +270,7 @@ func (l *Logger) logLevel(
 		}
 	}
 
-	// Custom static fields. They are meant to be
+	// Custom static fields. They are meant to be defined by users in their forks.
 	record = l.appendCustom(ctx, record)
 
 	// Message

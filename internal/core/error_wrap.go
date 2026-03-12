@@ -48,7 +48,7 @@ func wrapError(err error, msg string) *Error {
 	res.payload = AppendSerialized(res.payload, attr)
 
 	if insertLocations {
-		res.appendLocation(3)
+		res.appendLocation(4)
 	}
 	return res
 }
