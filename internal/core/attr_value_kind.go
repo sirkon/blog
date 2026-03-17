@@ -41,6 +41,7 @@ const (
 	ValueKindString   ValueKind = 47
 	ValueKindBytes    ValueKind = 48
 	ValueKindErrorRaw ValueKind = 49
+	valueKindStringer ValueKind = 50 // Will not be used outside of
 
 	// --- Group 3: Complex structs and slices (64+) ---
 
@@ -68,7 +69,11 @@ const (
 
 	ValueKindMax ValueKind = 255
 
-	ValuePredefinedUserID = 1 << 8
+	// DO NOT DELETE THESE THREE BELOW. They are for outer tools.
+
+	ValuePredefinedContext  = 1 << 8
+	ValuePredefinedText     = 2 << 8
+	ValuePredefinedLocation = 3 << 8
 
 	// There're ValueKind values at 257 and further to represent [Attr] with predefined keys, where their
 	// lowest byte represents a kind and the upper 7 bytes refer a key index.
@@ -165,13 +170,11 @@ func (k ValueKind) String() string {
 	case ValueKindGroup:
 		return "blog.Group"
 	default:
-		// Probably a predefined thing?
-		switch k >> 8 {
-		case ValuePredefinedUserID:
-		default:
-			return fmt.Sprintf("spec-kind-unknown[%d]", k)
+		index := k >> 8
+		if int(index) <= len(PredefinedKeys) {
+			return PredefinedKeys[index-1]
 		}
-		return PredefinedKeys[k>>8]
+		return fmt.Sprintf("spec-kind-unknown[%d]", k)
 	}
 }
 
@@ -179,5 +182,7 @@ func (k ValueKind) String() string {
 // higher 7 bytes of uint64. That extended bytes keep an index of
 // the key spec in this slice.
 var PredefinedKeys = []string{
-	"user-id",
+	"@context",
+	"@text",
+	"@location",
 }

@@ -2,6 +2,7 @@ package core
 
 import (
 	"encoding/binary"
+	"fmt"
 	"math"
 	"unsafe"
 )
@@ -11,9 +12,13 @@ const maxKeyLimit = 16 * 1024 * 1024
 
 // AppendSerialized serialize attr appending data to the src.
 func AppendSerialized(src []byte, attr Attr) []byte {
-	kind := attr.kind & 0xff
+	kind := attr.kind & 0xFF
 
-	src = append(src, byte(kind))
+	if kind != valueKindStringer {
+		src = append(src, byte(kind))
+	} else {
+		src = append(src, byte(ValueKindString))
+	}
 
 	switch attr.kind {
 	case ValueKindJustContextNode, ValueKindJustContextInheritedNode, ValueKindPhantomContextNode:
@@ -52,106 +57,78 @@ func AppendSerialized(src []byte, attr Attr) []byte {
 		src = binary.LittleEndian.AppendUint16(src, uint16(attr.Value.num))
 	case ValueKindInt32, ValueKindUint32, ValueKindFloat32:
 		src = binary.LittleEndian.AppendUint32(src, uint32(attr.Value.num))
-	case ValueKindString, ValueKindErrorRaw:
+	case ValueKindString:
 		src = binary.AppendUvarint(src, attr.Value.num)
-		v := attr.Value.srl.(*stringPtr)
+		v := uintptr(attr.Value.ext)
 		src = append(src, unsafe.Slice((*byte)(unsafe.Pointer(v)), attr.Value.num)...)
+	case valueKindStringer:
+		stg := *(*fmt.Stringer)(unsafe.Pointer(&attr.Value))
+		txt := stg.String()
+		src = binary.AppendUvarint(src, uint64(len(txt)))
+		src = append(src, txt...)
 	case ValueKindBytes:
 		src = binary.AppendUvarint(src, attr.Value.num)
-		v := attr.Value.srl.(*bytesPtr)
+		v := uintptr(attr.Value.ext)
 		src = append(src, unsafe.Slice((*byte)(unsafe.Pointer(v)), attr.Value.num)...)
+	case ValueKindErrorRaw:
+		err := *(*error)(unsafe.Pointer(&attr.Value))
+		txt := err.Error()
+		src = binary.AppendUvarint(src, uint64(len(txt)))
+		src = append(src, txt...)
 	case ValueKindError:
-		errPtr := (*Error)(unsafe.Pointer(attr.Value.srl.(*errorPtr)))
+		errPtr := (*Error)(unsafe.Pointer(uintptr(attr.Value.ext)))
 		src = binary.AppendUvarint(src, uint64(len(errPtr.payload)))
 		src = append(src, errPtr.payload...)
 	case ValueKindErrorEmbed:
-		errPtr := (*Error)(unsafe.Pointer(attr.Value.srl.(*errorPtr)))
+		errPtr := (*Error)(unsafe.Pointer(uintptr(attr.Value.ext)))
 		src = binary.AppendUvarint(src, uint64(len(errPtr.text)))
 		src = append(src, errPtr.text...)
 		src = binary.AppendUvarint(src, uint64(len(errPtr.payload)))
 		src = append(src, errPtr.payload...)
-	case ValueKindSliceBool:
+	case ValueKindSliceBool, ValueKindSliceInt8, ValueKindSliceUint8:
 		src = binary.AppendUvarint(src, attr.Value.num)
-		v := unsafe.Slice((*byte)(unsafe.Pointer(attr.Value.srl.(*boolSlicePtr))), attr.Value.num)
+		v := unsafe.Slice((*byte)(unsafe.Pointer(uintptr(attr.Value.ext))), attr.Value.num)
 		src = append(src, v...)
-	case ValueKindSliceInt:
+	case ValueKindSliceInt, ValueKindSliceInt64, ValueKindSliceUint, ValueKindSliceUint64:
 		src = binary.AppendUvarint(src, attr.Value.num)
-		v := unsafe.Slice((*int)(unsafe.Pointer(attr.Value.srl.(*intSlicePtr))), attr.Value.num)
-		for _, vv := range v {
-			src = binary.LittleEndian.AppendUint64(src, uint64(vv))
-		}
-	case ValueKindSliceInt8:
-		src = binary.AppendUvarint(src, attr.Value.num)
-		v := unsafe.Slice((*byte)(unsafe.Pointer(attr.Value.srl.(*int8SlicePtr))), attr.Value.num)
-		src = append(src, v...)
-	case ValueKindSliceInt16:
-		src = binary.AppendUvarint(src, attr.Value.num)
-		v := unsafe.Slice((*int16)(unsafe.Pointer(attr.Value.srl.(*int16SlicePtr))), attr.Value.num)
-		for _, vv := range v {
-			src = binary.LittleEndian.AppendUint16(src, uint16(vv))
-		}
-	case ValueKindSliceInt32:
-		src = binary.AppendUvarint(src, attr.Value.num)
-		v := unsafe.Slice((*int32)(unsafe.Pointer(attr.Value.srl.(*int32SlicePtr))), attr.Value.num)
-		for _, vv := range v {
-			src = binary.LittleEndian.AppendUint32(src, uint32(vv))
-		}
-	case ValueKindSliceInt64:
-		src = binary.AppendUvarint(src, attr.Value.num)
-		v := unsafe.Slice((*int64)(unsafe.Pointer(attr.Value.srl.(*int64SlicePtr))), attr.Value.num)
-		for _, vv := range v {
-			src = binary.LittleEndian.AppendUint64(src, uint64(vv))
-		}
-	case ValueKindSliceUint:
-		src = binary.AppendUvarint(src, attr.Value.num)
-		v := unsafe.Slice((*uint)(unsafe.Pointer(attr.Value.srl.(*uintSlicePtr))), attr.Value.num)
-		for _, vv := range v {
-			src = binary.LittleEndian.AppendUint64(src, uint64(vv))
-		}
-	case ValueKindSliceUint8:
-		src = binary.AppendUvarint(src, attr.Value.num)
-		v := unsafe.Slice((*byte)(unsafe.Pointer(attr.Value.srl.(*uint8SlicePtr))), attr.Value.num)
-		src = append(src, v...)
-	case ValueKindSliceUint16:
-		src = binary.AppendUvarint(src, attr.Value.num)
-		v := unsafe.Slice((*uint16)(unsafe.Pointer(attr.Value.srl.(*uint16SlicePtr))), attr.Value.num)
-		for _, vv := range v {
-			src = binary.LittleEndian.AppendUint16(src, vv)
-		}
-	case ValueKindSliceUint32:
-		src = binary.AppendUvarint(src, attr.Value.num)
-		v := unsafe.Slice((*uint32)(unsafe.Pointer(attr.Value.srl.(*uint32SlicePtr))), attr.Value.num)
-		for _, vv := range v {
-			src = binary.LittleEndian.AppendUint32(src, vv)
-		}
-	case ValueKindSliceUint64:
-		src = binary.AppendUvarint(src, attr.Value.num)
-		v := unsafe.Slice((*uint64)(unsafe.Pointer(attr.Value.srl.(*uint64SlicePtr))), attr.Value.num)
+		v := unsafe.Slice((*uint64)(unsafe.Pointer(uintptr(attr.Value.ext))), attr.Value.num)
 		for _, vv := range v {
 			src = binary.LittleEndian.AppendUint64(src, vv)
 		}
+	case ValueKindSliceInt16, ValueKindSliceUint16:
+		src = binary.AppendUvarint(src, attr.Value.num)
+		v := unsafe.Slice((*uint16)(unsafe.Pointer(uintptr(attr.Value.ext))), attr.Value.num)
+		for _, vv := range v {
+			src = binary.LittleEndian.AppendUint16(src, vv)
+		}
+	case ValueKindSliceInt32, ValueKindSliceUint32:
+		src = binary.AppendUvarint(src, attr.Value.num)
+		v := unsafe.Slice((*uint32)(unsafe.Pointer(uintptr(attr.Value.ext))), attr.Value.num)
+		for _, vv := range v {
+			src = binary.LittleEndian.AppendUint32(src, vv)
+		}
 	case ValueKindSliceFloat32:
 		src = binary.AppendUvarint(src, attr.Value.num)
-		v := unsafe.Slice((*float32)(unsafe.Pointer(attr.Value.srl.(*float32SlicePtr))), attr.Value.num)
+		v := unsafe.Slice((*float32)(unsafe.Pointer(uintptr(attr.Value.ext))), attr.Value.num)
 		for _, vv := range v {
 			src = binary.LittleEndian.AppendUint32(src, math.Float32bits(vv))
 		}
 	case ValueKindSliceFloat64:
 		src = binary.AppendUvarint(src, attr.Value.num)
-		v := unsafe.Slice((*float64)(unsafe.Pointer(attr.Value.srl.(*float64SlicePtr))), attr.Value.num)
+		v := unsafe.Slice((*float64)(unsafe.Pointer(uintptr(attr.Value.ext))), attr.Value.num)
 		for _, vv := range v {
 			src = binary.LittleEndian.AppendUint64(src, math.Float64bits(vv))
 		}
 	case ValueKindSliceString:
 		src = binary.AppendUvarint(src, attr.Value.num)
-		v := unsafe.Slice((*string)(unsafe.Pointer(attr.Value.srl.(*stringSlicePtr))), attr.Value.num)
+		v := unsafe.Slice((*string)(unsafe.Pointer(uintptr(attr.Value.ext))), attr.Value.num)
 		for _, vv := range v {
 			src = binary.AppendUvarint(src, uint64(len(vv)))
 			src = append(src, vv...)
 		}
 	case ValueKindGroup:
 		src = binary.AppendUvarint(src, attr.Value.num)
-		v := unsafe.Slice((*Attr)(unsafe.Pointer(attr.Value.srl.(*groupPtr))), attr.Value.num)
+		v := unsafe.Slice((*Attr)(unsafe.Pointer(uintptr(attr.Value.ext))), attr.Value.num)
 		for _, vv := range v {
 			src = AppendSerialized(src, vv)
 		}

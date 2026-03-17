@@ -11,16 +11,9 @@ import (
 //
 //	type Attr struct {
 //	    Key   string
-//	    Value Value
+//	    attrValue attrValue
 //	}
 type Attr = core.Attr
-
-// Serializer type alias for [core.Serializer, which is just
-//
-//	type Serializer interface {
-//	    Serialize(src []byte) []byte
-//	}
-type Serializer = core.Serializer
 
 // Bool returns an [Attr] for boolean value.
 func Bool(key string, value bool) Attr {

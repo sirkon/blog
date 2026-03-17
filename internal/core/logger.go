@@ -238,6 +238,7 @@ func (l *Logger) logLevel(
 	} else {
 		logDataPtr = val.(*[]byte)
 	}
+	origData := *logDataPtr
 
 	// Omit the first 1 + 4 + 10 bytes as we store 0xff + CRC32 + uvarint(record_size) in here.
 	// This uvarint part's length may differ, and we may need an adjustment to pack that header tightly.
@@ -300,7 +301,7 @@ func (l *Logger) logLevel(
 		fmt.Printf("failed to write logged data %v: %s\n", data, err)
 	}
 	atomic.AddUint64(l.inProgress, ^uint64(0))
-	l.putBufferBack(logDataPtr, data)
+	l.putBufferBack(logDataPtr, origData)
 }
 
 func (l *Logger) putBufferBack(origPrt *[]byte, data []byte) {

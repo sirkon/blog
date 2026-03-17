@@ -58,7 +58,7 @@ func ErrorNodePhantomContext() Attr {
 func ErrorNodeLocation(file string, line int) Attr {
 	return Attr{
 		Key: file,
-		Value: Value{
+		Value: attrValue{
 			num: uint64(line),
 		},
 		kind: ValueKindLocationNode,
