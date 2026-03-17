@@ -319,8 +319,8 @@ func (l *Logger) putBufferBack(origPrt *[]byte, data []byte) {
 		// Having recordBufferMaxCapacity pool is enough,
 		return
 	}
-	orig = orig[:0]
-	l.bufs.Put(&orig)
+	*origPrt = orig
+	l.bufs.Put(origPrt)
 }
 
 // LoggingLevel represents logging levels.

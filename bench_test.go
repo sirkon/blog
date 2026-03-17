@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/rs/zerolog"
+
 	"github.com/sirkon/blog"
 	"github.com/sirkon/blog/beer"
 )
@@ -21,12 +23,12 @@ var (
 	discardLogger *blog.Logger
 	blogpLogger   *blog.Logger
 	bufferLogger  *blog.Logger
+	zlogger       zerolog.Logger
 
 	blogFile           *os.File
 	blogTextPrettyFile *os.File
 	txtCtxFile         *os.File
 	justFile           *os.File
-	zlogFile           *os.File
 
 	text = bytes.Repeat([]byte{0}, 256)
 )
@@ -50,14 +52,13 @@ func TestMain(t *testing.M) {
 	files = append(files, justFile)
 	blogTextPrettyFile = createFile("blogpretty.log")
 	files = append(files, blogTextPrettyFile)
-	zlogFile = createFile("zlog.log")
-	files = append(files, zlogFile)
 
 	binlog, _ = blog.NewLogger(blog.NewSyncWriter(blogFile), blog.OptionLogFromLevel(blog.LevelDebug))
 	txtCtxLogger = slog.New(slog.NewJSONHandler(txtCtxFile, &slog.HandlerOptions{}))
 	discardLogger, _ = blog.NewLogger(blog.NewSyncWriter(io.Discard))
 	blogpLogger, _ = blog.NewLogger(blog.NewPrettyWriter(blogTextPrettyFile))
 	bufferLogger, _ = blog.NewLogger(newBufferWriter())
+	zlogger = zerolog.New(newBufferWriter())
 
 	t.Run()
 }
