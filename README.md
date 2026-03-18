@@ -154,3 +154,5 @@ In other words, we store more information and manage to save 0.5μs compared to 
 save 1μs vs an approach that tries to mimic this rich structure but is still lacks some info and loses in
 representation. And `BenchmarkBlogTxtNoContext` vs `BenchmarkBlog` shows why you better stick to `beer.Error`: it
 has all that nice info, and it is still built faster than a simple wrap bringing no details.
+
+Some more benching against Zerolog with both JSON and CBOR encoding is [here](./internal/benching/RESULTS.md)
