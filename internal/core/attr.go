@@ -13,16 +13,8 @@ import (
 // Attr a key-spec pair for logging context.
 type Attr struct {
 	Key   string
-	Value attrValue
+	Value Value
 	kind  ValueKind
-}
-
-// attrValue that is meant to keep any numeric values, pointers and strings via
-// unsafe transformations. No GC care needed because the value is meant
-// to be serialized into []byte BEFORE the value it references will disappear.
-type attrValue struct {
-	num uint64
-	ext uint64
 }
 
 // Kind returns spec of kind.
@@ -37,7 +29,7 @@ func Bool(key string, value bool) Attr {
 	}
 	return Attr{
 		Key: key,
-		Value: attrValue{
+		Value: Value{
 			num: v,
 		},
 		kind: ValueKindBool,
@@ -49,7 +41,7 @@ func Time(key string, value time.Time) Attr {
 	_ = key[0]
 	return Attr{
 		Key: key,
-		Value: attrValue{
+		Value: Value{
 			num: uint64(value.UnixNano()),
 		},
 		kind: ValueKindTime,
@@ -61,7 +53,7 @@ func Duration(key string, value time.Duration) Attr {
 	_ = key[0]
 	return Attr{
 		Key: key,
-		Value: attrValue{
+		Value: Value{
 			num: uint64(value),
 		},
 		kind: ValueKindDuration,
@@ -73,7 +65,7 @@ func Int(key string, value int) Attr {
 	_ = key[0]
 	return Attr{
 		Key: key,
-		Value: attrValue{
+		Value: Value{
 			num: uint64(value),
 		},
 		kind: ValueKindInt,
@@ -85,7 +77,7 @@ func Int8(key string, value int8) Attr {
 	_ = key[0]
 	return Attr{
 		Key: key,
-		Value: attrValue{
+		Value: Value{
 			num: uint64(value),
 		},
 		kind: ValueKindInt8,
@@ -97,7 +89,7 @@ func Int16(key string, value int16) Attr {
 	_ = key[0]
 	return Attr{
 		Key: key,
-		Value: attrValue{
+		Value: Value{
 			num: uint64(value),
 		},
 		kind: ValueKindInt16,
@@ -109,7 +101,7 @@ func Int32(key string, value int32) Attr {
 	_ = key[0]
 	return Attr{
 		Key: key,
-		Value: attrValue{
+		Value: Value{
 			num: uint64(value),
 		},
 		kind: ValueKindInt32,
@@ -121,7 +113,7 @@ func Int64(key string, value int64) Attr {
 	_ = key[0]
 	return Attr{
 		Key: key,
-		Value: attrValue{
+		Value: Value{
 			num: uint64(value),
 		},
 		kind: ValueKindInt64,
@@ -133,7 +125,7 @@ func Uint(key string, value uint) Attr {
 	_ = key[0]
 	return Attr{
 		Key: key,
-		Value: attrValue{
+		Value: Value{
 			num: uint64(value),
 		},
 		kind: ValueKindUint,
@@ -145,7 +137,7 @@ func Uint8(key string, value uint8) Attr {
 	_ = key[0]
 	return Attr{
 		Key: key,
-		Value: attrValue{
+		Value: Value{
 			num: uint64(value),
 		},
 		kind: ValueKindUint8,
@@ -157,7 +149,7 @@ func Uint16(key string, value uint16) Attr {
 	_ = key[0]
 	return Attr{
 		Key: key,
-		Value: attrValue{
+		Value: Value{
 			num: uint64(value),
 		},
 		kind: ValueKindUint16,
@@ -169,7 +161,7 @@ func Uint32(key string, value uint32) Attr {
 	_ = key[0]
 	return Attr{
 		Key: key,
-		Value: attrValue{
+		Value: Value{
 			num: uint64(value),
 		},
 		kind: ValueKindUint32,
@@ -181,7 +173,7 @@ func Uint64(key string, value uint64) Attr {
 	_ = key[0]
 	return Attr{
 		Key: key,
-		Value: attrValue{
+		Value: Value{
 			num: value,
 		},
 		kind: ValueKindUint64,
@@ -193,7 +185,7 @@ func Flt32(key string, value float32) Attr {
 	_ = key[0]
 	return Attr{
 		Key: key,
-		Value: attrValue{
+		Value: Value{
 			num: uint64(math.Float32bits(value)),
 		},
 		kind: ValueKindFloat32,
@@ -205,7 +197,7 @@ func Flt64(key string, value float64) Attr {
 	_ = key[0]
 	return Attr{
 		Key: key,
-		Value: attrValue{
+		Value: Value{
 			num: math.Float64bits(value),
 		},
 		kind: ValueKindFloat64,
@@ -217,9 +209,9 @@ func Str(key string, value string) Attr {
 	_ = key[0]
 	return Attr{
 		Key: key,
-		Value: attrValue{
+		Value: Value{
 			num: uint64(len(value)),
-			ext: uint64(uintptr(unsafe.Pointer(unsafe.StringData(value)))),
+			srl: (*stringPtr)(unsafe.Pointer(unsafe.StringData(value))),
 		},
 		kind: ValueKindString,
 	}
@@ -228,10 +220,15 @@ func Str(key string, value string) Attr {
 // Stg returns an [Attr] for [fmt.Stringer] spec packed as just a string.
 func Stg(key string, value fmt.Stringer) Attr {
 	_ = key[0]
+	val := value.String()
+	strPtr := (*stringPtr)(unsafe.Pointer(unsafe.StringData(val)))
 	return Attr{
-		Key:   key,
-		Value: *(*attrValue)(unsafe.Pointer(&value)),
-		kind:  ValueKindString,
+		Key: key,
+		Value: Value{
+			num: uint64(len(val)),
+			srl: strPtr,
+		},
+		kind: ValueKindString,
 	}
 }
 
@@ -239,17 +236,20 @@ func Stg(key string, value fmt.Stringer) Attr {
 func Bytes(key string, value []byte) Attr {
 	_ = key[0]
 	var kind ValueKind
+	var ptr Serializer
 	if isPrintableStringWithSpaces(value) {
 		kind = ValueKindString
+		ptr = (*stringPtr)(unsafe.Pointer(unsafe.SliceData(value)))
 	} else {
 		kind = ValueKindBytes
+		ptr = (*bytesPtr)(unsafe.Pointer(unsafe.SliceData(value)))
 	}
 
 	return Attr{
 		Key: key,
-		Value: attrValue{
+		Value: Value{
 			num: uint64(len(value)),
-			ext: uint64(uintptr(unsafe.Pointer(unsafe.SliceData(value)))),
+			srl: ptr,
 		},
 		kind: kind,
 	}
@@ -262,7 +262,11 @@ func ErrorAttr(key string, err error) Attr {
 	if !ok {
 		e, ok = errors.AsType[*Error](err)
 		if ok {
-			e.sufficient = false
+			e = &Error{
+				payload:    e.payload,
+				wrap:       e.wrap,
+				sufficient: false,
+			}
 		}
 	}
 	if ok {
@@ -280,17 +284,21 @@ func ErrorAttr(key string, err error) Attr {
 
 		return Attr{
 			Key: key,
-			Value: attrValue{
-				ext: uint64(uintptr(unsafe.Pointer(e))),
+			Value: Value{
+				srl: (*errorPtr)(unsafe.Pointer(e)),
 			},
 			kind: kind,
 		}
 	}
 
+	val := err.Error()
 	return Attr{
-		Key:   key,
-		Value: *(*attrValue)(unsafe.Pointer(&err)),
-		kind:  ValueKindErrorRaw,
+		Key: key,
+		Value: Value{
+			num: uint64(len(val)),
+			srl: (*stringPtr)(unsafe.Pointer(unsafe.StringData(val))),
+		},
+		kind: ValueKindErrorRaw,
 	}
 }
 
@@ -305,9 +313,9 @@ func Bools(key string, value []bool) Attr {
 	_ = key[0]
 	return Attr{
 		Key: key,
-		Value: attrValue{
+		Value: Value{
 			num: uint64(len(value)),
-			ext: uint64(uintptr(unsafe.Pointer(unsafe.SliceData(value)))),
+			srl: (*boolSlicePtr)(unsafe.Pointer(unsafe.SliceData(value))),
 		},
 		kind: ValueKindSliceBool,
 	}
@@ -318,9 +326,9 @@ func Ints(key string, value []int) Attr {
 	_ = key[0]
 	return Attr{
 		Key: key,
-		Value: attrValue{
+		Value: Value{
 			num: uint64(len(value)),
-			ext: uint64(uintptr(unsafe.Pointer(unsafe.SliceData(value)))),
+			srl: (*intSlicePtr)(unsafe.Pointer(unsafe.SliceData(value))),
 		},
 		kind: ValueKindSliceInt,
 	}
@@ -331,9 +339,9 @@ func Int8s(key string, value []int8) Attr {
 	_ = key[0]
 	return Attr{
 		Key: key,
-		Value: attrValue{
+		Value: Value{
 			num: uint64(len(value)),
-			ext: uint64(uintptr(unsafe.Pointer(unsafe.SliceData(value)))),
+			srl: (*int8SlicePtr)(unsafe.Pointer(unsafe.SliceData(value))),
 		},
 		kind: ValueKindSliceInt8,
 	}
@@ -344,9 +352,9 @@ func Int16s(key string, value []int16) Attr {
 	_ = key[0]
 	return Attr{
 		Key: key,
-		Value: attrValue{
+		Value: Value{
 			num: uint64(len(value)),
-			ext: uint64(uintptr(unsafe.Pointer(unsafe.SliceData(value)))),
+			srl: (*int16SlicePtr)(unsafe.Pointer(unsafe.SliceData(value))),
 		},
 		kind: ValueKindSliceInt16,
 	}
@@ -357,9 +365,9 @@ func Int32s(key string, value []int32) Attr {
 	_ = key[0]
 	return Attr{
 		Key: key,
-		Value: attrValue{
+		Value: Value{
 			num: uint64(len(value)),
-			ext: uint64(uintptr(unsafe.Pointer(unsafe.SliceData(value)))),
+			srl: (*int32SlicePtr)(unsafe.Pointer(unsafe.SliceData(value))),
 		},
 		kind: ValueKindSliceInt32,
 	}
@@ -370,9 +378,9 @@ func Int64s(key string, value []int64) Attr {
 	_ = key[0]
 	return Attr{
 		Key: key,
-		Value: attrValue{
+		Value: Value{
 			num: uint64(len(value)),
-			ext: uint64(uintptr(unsafe.Pointer(unsafe.SliceData(value)))),
+			srl: (*int64SlicePtr)(unsafe.Pointer(unsafe.SliceData(value))),
 		},
 		kind: ValueKindSliceInt64,
 	}
@@ -383,9 +391,9 @@ func Uints(key string, value []uint) Attr {
 	_ = key[0]
 	return Attr{
 		Key: key,
-		Value: attrValue{
+		Value: Value{
 			num: uint64(len(value)),
-			ext: uint64(uintptr(unsafe.Pointer(unsafe.SliceData(value)))),
+			srl: (*uintSlicePtr)(unsafe.Pointer(unsafe.SliceData(value))),
 		},
 		kind: ValueKindSliceUint,
 	}
@@ -396,9 +404,9 @@ func Uint8s(key string, value []uint8) Attr {
 	_ = key[0]
 	return Attr{
 		Key: key,
-		Value: attrValue{
+		Value: Value{
 			num: uint64(len(value)),
-			ext: uint64(uintptr(unsafe.Pointer(unsafe.SliceData(value)))),
+			srl: (*uint8SlicePtr)(unsafe.Pointer(unsafe.SliceData(value))),
 		},
 		kind: ValueKindSliceUint8,
 	}
@@ -409,9 +417,9 @@ func Uint16s(key string, value []uint16) Attr {
 	_ = key[0]
 	return Attr{
 		Key: key,
-		Value: attrValue{
+		Value: Value{
 			num: uint64(len(value)),
-			ext: uint64(uintptr(unsafe.Pointer(unsafe.SliceData(value)))),
+			srl: (*uint16SlicePtr)(unsafe.Pointer(unsafe.SliceData(value))),
 		},
 		kind: ValueKindSliceUint16,
 	}
@@ -422,9 +430,9 @@ func Uint32s(key string, value []uint32) Attr {
 	_ = key[0]
 	return Attr{
 		Key: key,
-		Value: attrValue{
+		Value: Value{
 			num: uint64(len(value)),
-			ext: uint64(uintptr(unsafe.Pointer(unsafe.SliceData(value)))),
+			srl: (*uint32SlicePtr)(unsafe.Pointer(unsafe.SliceData(value))),
 		},
 		kind: ValueKindSliceUint32,
 	}
@@ -435,9 +443,9 @@ func Uint64s(key string, value []uint64) Attr {
 	_ = key[0]
 	return Attr{
 		Key: key,
-		Value: attrValue{
+		Value: Value{
 			num: uint64(len(value)),
-			ext: uint64(uintptr(unsafe.Pointer(unsafe.SliceData(value)))),
+			srl: (*uint64SlicePtr)(unsafe.Pointer(unsafe.SliceData(value))),
 		},
 		kind: ValueKindSliceUint64,
 	}
@@ -448,9 +456,9 @@ func Flt32s(key string, value []float32) Attr {
 	_ = key[0]
 	return Attr{
 		Key: key,
-		Value: attrValue{
+		Value: Value{
 			num: uint64(len(value)),
-			ext: uint64(uintptr(unsafe.Pointer(unsafe.SliceData(value)))),
+			srl: (*float32SlicePtr)(unsafe.Pointer(unsafe.SliceData(value))),
 		},
 		kind: ValueKindSliceFloat32,
 	}
@@ -461,9 +469,9 @@ func Flt64s(key string, value []float64) Attr {
 	_ = key[0]
 	return Attr{
 		Key: key,
-		Value: attrValue{
+		Value: Value{
 			num: uint64(len(value)),
-			ext: uint64(uintptr(unsafe.Pointer(unsafe.SliceData(value)))),
+			srl: (*float64SlicePtr)(unsafe.Pointer(unsafe.SliceData(value))),
 		},
 		kind: ValueKindSliceFloat64,
 	}
@@ -474,9 +482,9 @@ func Strs(key string, value []string) Attr {
 	_ = key[0]
 	return Attr{
 		Key: key,
-		Value: attrValue{
+		Value: Value{
 			num: uint64(len(value)),
-			ext: uint64(uintptr(unsafe.Pointer(unsafe.SliceData(value)))),
+			srl: (*stringSlicePtr)(unsafe.Pointer(unsafe.SliceData(value))),
 		},
 		kind: ValueKindSliceString,
 	}
@@ -487,9 +495,9 @@ func Group(key string, value ...Attr) Attr {
 	_ = key[0]
 	return Attr{
 		Key: key,
-		Value: attrValue{
+		Value: Value{
 			num: uint64(len(value)),
-			ext: uint64(uintptr(unsafe.Pointer(unsafe.SliceData(value)))),
+			srl: (*groupPtr)(unsafe.Pointer(unsafe.SliceData(value))),
 		},
 		kind: ValueKindGroup,
 	}
