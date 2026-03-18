@@ -59,7 +59,7 @@ func TestMain(t *testing.M) {
 	}()
 
 	binlog, _ = blog.NewLogger(newBufferWriter(), blog.OptionLogFromLevel(blog.LevelDebug))
-	zlogger = zerolog.New(newBufferWriter())
+	zlogger = zerolog.New(newBufferWriter()).With().Timestamp().Logger()
 	rnd := newRandom()
 
 	for range 5 {
