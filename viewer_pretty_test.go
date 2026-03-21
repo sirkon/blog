@@ -242,7 +242,6 @@ func TestNewPrettyWriter(t *testing.T) {
 		core.Err(err),
 		core.ErrorAttr("error", io.EOF),
 	)
-	fmt.Println(len(w.view.tree.ctrl), cap(w.view.tree.ctrl), w.view.tree.clen)
 
 	w.buf = w.buf[:0]
 	w.browseCtrl()

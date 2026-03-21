@@ -82,18 +82,5 @@ func main() {
 		Flt64("e", math.E)
 	log.Error(nil, "failed to do something", blog.Err(err))
 
-	{
-		err := beer.New("failed to commit stream").
-			Str("user-role", "COMMON-USER").
-			Str("method", "service.Method").
-			Str("response-code", "NOT_AUTHORIZED")
-		err = beer.Wrap(err, "stream data under service user").
-			Strs("documents", []string{"document1", "document2"}).
-			Str("document-class", "application/text")
-		err = beer.Wrap(err, "merge documents").
-			Ints("documents", []int{100000000001, 200002123123})
-		log.Error(nil, "failed to merge documents", blog.Err(err))
-	}
-
 	panic(0)
 }
