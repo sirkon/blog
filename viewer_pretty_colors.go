@@ -21,22 +21,17 @@ type prettyWriterColorProfile struct {
 
 func newPrettyWriterColorProfileDark() *prettyWriterColorProfile {
 	return &prettyWriterColorProfile{
-		reset: "\033[0m",
-		bold:  "\033[1m",
-
-		time: "\033[35m", // magenta
-
-		trace: "\033[90m", // dim gray
-		debug: "\033[36m", // cyan
-		info:  "\033[32m", // green
-		warn:  "\033[33m", // yellow/orange
-		error: "\033[31m", // red
-
-		panic: "\033[1;41;97m",
-
-		loc:  "\033[38;5;244m",
-		link: "\033[38;5;240m",
-
+		reset:  "\033[0m",
+		bold:   "\033[1m",
+		time:   "\033[35m",
+		trace:  "\033[90m",
+		debug:  "\033[36m",
+		info:   "\033[32m",
+		warn:   "\033[33m",
+		error:  "\033[31m",
+		panic:  "\033[1;41;97m",
+		loc:    "\033[38;5;244m",
+		link:   "\033[38;5;240m",
 		stdots: "\033[38;5;236m",
 		sttext: "\033[38;5;245m",
 		key:    "\033[38;5;109m",
@@ -47,22 +42,17 @@ func newPrettyWriterColorProfileDark() *prettyWriterColorProfile {
 
 func newPrettyWriterColorProfileLight() *prettyWriterColorProfile {
 	return &prettyWriterColorProfile{
-		reset: "\033[0m",
-		bold:  "\033[1m",
-
-		time: "\033[95m", // bright magenta
-
-		trace: "\033[90m", // gray
-		debug: "\033[36m", // cyan
-		info:  "\033[32m", // green
-		warn:  "\033[33m", // yellow/orange
-		error: "\033[31m", // red
-
-		panic: "\033[1;41;97m",
-
-		loc:  "\033[38;5;240m",
-		link: "\033[38;5;248m",
-
+		reset:  "\033[0m",
+		bold:   "\033[1m",
+		time:   "\033[95m",
+		trace:  "\033[90m",
+		debug:  "\033[36m",
+		info:   "\033[32m",
+		warn:   "\033[33m",
+		error:  "\033[31m",
+		panic:  "\033[1;41;97m",
+		loc:    "\033[38;5;240m",
+		link:   "\033[38;5;248m",
 		stdots: "\033[38;5;252m",
 		sttext: "\033[38;5;240m",
 		key:    "\033[38;5;31m",
