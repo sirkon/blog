@@ -99,8 +99,8 @@ func BenchmarkZeroLog(b *testing.B) {
 
 // --- Worst case for binlog --------
 
-func BenchmarkWorstCaseForBinLog(b *testing.B) {
-	b.Run("blog", func(b *testing.B) {
+func BenchmarkWorstCaseForBlog(b *testing.B) {
+	b.Run("BinLog", func(b *testing.B) {
 		b.ReportAllocs()
 		for b.Loop() {
 			binlog.Error(
@@ -115,7 +115,7 @@ func BenchmarkWorstCaseForBinLog(b *testing.B) {
 		}
 	})
 
-	b.Run("zerolog", func(b *testing.B) {
+	b.Run("ZeroLog", func(b *testing.B) {
 		b.ReportAllocs()
 		for b.Loop() {
 			zlogger.Error().
@@ -141,7 +141,7 @@ func BenchmarkRealLog(b *testing.B) {
 	// 	"ip_address":"192.168.1.15"
 	// }
 
-	b.Run("blog", func(b *testing.B) {
+	b.Run("BinLog", func(b *testing.B) {
 		b.ReportAllocs()
 		for b.Loop() {
 			binlog.Info(nil, "User logged in",
@@ -151,7 +151,7 @@ func BenchmarkRealLog(b *testing.B) {
 		}
 	})
 
-	b.Run("zerolog", func(b *testing.B) {
+	b.Run("ZeroLog", func(b *testing.B) {
 		b.ReportAllocs()
 		for b.Loop() {
 			zlogger.Info().
@@ -163,7 +163,7 @@ func BenchmarkRealLog(b *testing.B) {
 }
 
 func BenchmarkRealErrorLog(b *testing.B) {
-	b.Run("blog", func(b *testing.B) {
+	b.Run("BinLog", func(b *testing.B) {
 		b.ReportAllocs()
 		for b.Loop() {
 			err := beer.New("failed to commit stream").
@@ -179,7 +179,7 @@ func BenchmarkRealErrorLog(b *testing.B) {
 		}
 	})
 
-	b.Run("zerolog", func(b *testing.B) {
+	b.Run("ZeroLog", func(b *testing.B) {
 		b.ReportAllocs()
 		for b.Loop() {
 			err := fmt.Errorf("failed to commit stream user-role[%s] method[%s] response-code[%s]",
