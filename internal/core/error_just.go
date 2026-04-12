@@ -10,6 +10,7 @@ func JustError(err error) *Error {
 	if e, ok := err.(*Error); ok {
 		attr = ErrorNodeJustContext()
 		res = e
+		res.payload = append(res.payload, byte(ValueKindGroupEnd))
 	} else {
 		attr = ErrorNodeJustContextInherited()
 		if e, ok = errors.AsType[*Error](err); ok {
@@ -21,8 +22,9 @@ func JustError(err error) *Error {
 				wrap:       err,
 				sufficient: false,
 			}
+			res.payload = append(res.payload, byte(ValueKindGroupEnd))
 		} else {
-			// We got an error that is totally outside of ours and we can just push it into a payload
+			// We got an error that is totally outside of ours, and we can just push it into a payload
 			// without hesitation.
 			res = &Error{
 				payload:    make([]byte, 0, defaultPayloadSize),

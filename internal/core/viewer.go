@@ -141,7 +141,9 @@ func ProcessRecord(line []byte, viewer RecordViewer) (err error) {
 	viewer.Message(msg)
 
 	// Deconstruct the context.
-	pd := payloadDeconstructor{}
+	pd := payloadDeconstructor{
+		stack: make([]ValueKind, 0, 4),
+	}
 	vis := viewer.ContextVisitor()
 	pd.deconstructPayload(record, vis)
 	vis.Finish()
@@ -150,11 +152,12 @@ func ProcessRecord(line []byte, viewer RecordViewer) (err error) {
 }
 
 type payloadDeconstructor struct {
-	hasErrors            bool
-	someErrorStagePassed bool
-	errText              [][]byte
-	errTextLen           int
-	errTextInProgress    bool
+	hasErrors         bool
+	stack             []ValueKind
+	errText           [][]byte
+	embedErrText      []byte
+	errTextLen        int
+	errTextInProgress bool
 }
 
 func (d *payloadDeconstructor) deconstructPayload(payload []byte, visitor RecordContextVisitor) {
@@ -170,13 +173,33 @@ func (d *payloadDeconstructor) deconstructNode(payload []byte, visitor RecordCon
 	kind := ValueKind(payload[0])
 	switch kind {
 	case ValueKindJustContextNode, ValueKindJustContextInheritedNode:
-		if d.someErrorStagePassed {
-			visitor.LeaveErrorStage()
-		}
+		d.stack = append(d.stack, kind)
 		visitor.EnterErrorStage(ErrorProcessingStageContext, nil)
-		d.someErrorStagePassed = true
 		return payload[1:]
 	case ValueKindPhantomContextNode:
+		return payload[1:]
+	case ValueKindGroupEnd:
+		tip := d.stack[len(d.stack)-1]
+		d.stack = d.stack[:len(d.stack)-1]
+
+		switch tip {
+		case ValueKindGroup:
+			visitor.LeaveGroup()
+		case ValueKindJustContextNode, ValueKindJustContextInheritedNode,
+			ValueKindNewNode, ValueKindWrapNode, ValueKindWrapInheritedNode:
+			visitor.LeaveErrorStage()
+		case ValueKindError:
+			buf := make([]byte, 0, d.errTextLen+(len(d.errText)-1)*2)
+			for i := len(d.errText) - 1; i >= 0; i-- {
+				buf = append(buf, d.errText[i]...)
+				if i > 0 {
+					buf = append(buf, ':', ' ')
+				}
+			}
+			visitor.LeaveError(buf)
+		case ValueKindErrorEmbed:
+			visitor.LeaveError(d.embedErrText)
+		}
 		return payload[1:]
 	}
 
@@ -213,35 +236,26 @@ func (d *payloadDeconstructor) deconstructPayloadNodeValue(
 ) []byte {
 	switch kind {
 	case ValueKindNewNode:
-		if d.someErrorStagePassed {
-			visitor.LeaveErrorStage()
-		}
+		d.stack = append(d.stack, kind)
 		visitor.EnterErrorStage(ErrorProcessingStageNew, key)
 		if d.errTextInProgress {
 			d.errText = append(d.errText, key)
 			d.errTextLen += len(key)
 		}
-		d.someErrorStagePassed = true
 	case ValueKindWrapNode:
-		if d.someErrorStagePassed {
-			visitor.LeaveErrorStage()
-		}
+		d.stack = append(d.stack, kind)
 		visitor.EnterErrorStage(ErrorProcessingStageWrap, key)
 		if d.errTextInProgress {
 			d.errText = append(d.errText, key)
 			d.errTextLen += len(key)
 		}
-		d.someErrorStagePassed = true
 	case ValueKindWrapInheritedNode:
-		if d.someErrorStagePassed {
-			visitor.LeaveErrorStage()
-		}
+		d.stack = append(d.stack, kind)
 		visitor.EnterErrorStage(ErrorProcessingStageWrap, key)
 		if d.errTextInProgress {
 			d.errText = append(d.errText, key)
 			d.errTextLen += len(key)
 		}
-		d.someErrorStagePassed = true
 	case ValueKindLocationNode:
 		var line int
 		line, payload = mustReadUvarint(payload)
@@ -251,8 +265,6 @@ func (d *payloadDeconstructor) deconstructPayloadNodeValue(
 			d.errText = append(d.errText, key)
 			d.errTextLen += len(key)
 		}
-	case ValueKindForeignErrorFormat:
-
 	case ValueKindBool:
 		var v uint8
 		v, payload = mustReadU8(payload)
@@ -404,53 +416,20 @@ func (d *payloadDeconstructor) deconstructPayloadNodeValue(
 		}
 		visitor.StrSlice(key, res)
 	case ValueKindGroup:
-		var length int
-		length, payload = mustReadUvarint(payload)
+		d.stack = append(d.stack, kind)
 		visitor.EnterGroup(key)
-		for range length {
-			payload = d.deconstructNode(payload, visitor)
-		}
-		visitor.LeaveGroup()
 	case ValueKindError:
-		d.someErrorStagePassed = false
-		var length int
-		length, payload = mustReadUvarint(payload)
-		d.someErrorStagePassed = false
+		d.stack = append(d.stack, kind)
 		visitor.EnterError(key)
 		d.errText = d.errText[:0]
 		d.errTextLen = 0
 		d.errTextInProgress = true
-		d.deconstructPayload(payload[:length], visitor)
-
-		buf := make([]byte, 0, d.errTextLen+(len(d.errText)-1)*2)
-		for i := len(d.errText) - 1; i >= 0; i-- {
-			buf = append(buf, d.errText[i]...)
-			if i > 0 {
-				buf = append(buf, ':', ' ')
-			}
-		}
-		if d.someErrorStagePassed {
-			visitor.LeaveErrorStage()
-		}
-		visitor.LeaveError(buf)
-
-		payload = payload[length:]
 	case ValueKindErrorEmbed:
+		d.stack = append(d.stack, kind)
 		var errorText []byte
 		errorText, payload = mustReadString(payload)
-		var length int
-		length, payload = mustReadUvarint(payload)
-		d.someErrorStagePassed = false
+		d.embedErrText = errorText
 		visitor.EnterError(key)
-		d.errText = d.errText[:0]
-		d.errTextLen = 0
-		d.errTextInProgress = false
-		d.deconstructPayload(payload[:length], visitor)
-		if d.someErrorStagePassed {
-			visitor.LeaveErrorStage()
-		}
-		visitor.LeaveError(errorText)
-		payload = payload[length:]
 	case ValueKindErrorRaw:
 		var value []byte
 		value, payload = mustReadString(payload)

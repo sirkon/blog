@@ -49,6 +49,8 @@ loop:
 				strInsert = e.wrap.Error()
 			}
 			break loop
+		case ValueKindGroupEnd:
+			continue
 		}
 
 		var key []byte

@@ -21,6 +21,7 @@ func wrapError(err error, msg string) *Error {
 	if e, ok := err.(*Error); ok {
 		attr = ErrorNodeWrap(msg)
 		res = e
+		res.payload = append(res.payload, byte(ValueKindGroupEnd))
 	} else {
 		attr = ErrorNodeWrapInherited(msg)
 		if e, ok = errors.AsType[*Error](err); ok {
@@ -33,6 +34,7 @@ func wrapError(err error, msg string) *Error {
 				sufficient: false,
 				specs:      e.specs,
 			}
+			res.payload = append(res.payload, byte(ValueKindGroupEnd))
 		} else {
 			// We got an error that is totally outside of ours and we can just push it into a payload
 			// without hesitation.

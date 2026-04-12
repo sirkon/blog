@@ -82,5 +82,5 @@ func main() {
 		Flt64("e", math.E)
 	log.Error(nil, "failed to do something", blog.Err(err))
 
-	panic(0)
+	//panic(0)
 }

@@ -40,6 +40,23 @@ func AppendSerialized(src []byte, attr Attr) []byte {
 	switch kind {
 	case ValueKindLocationNode:
 		src = binary.AppendUvarint(src, attr.Value.num)
+	case ValueKindError:
+		errPtr := (*Error)(unsafe.Pointer(attr.Value.srl.(*errorPtr)))
+		src = append(src, errPtr.payload...)
+		// Double group end because we need to close new/wrap/whatever subgrops.
+		src = append(src, byte(ValueKindGroupEnd), byte(ValueKindGroupEnd))
+	case ValueKindErrorEmbed:
+		errPtr := (*Error)(unsafe.Pointer(attr.Value.srl.(*errorPtr)))
+		src = binary.AppendUvarint(src, uint64(len(errPtr.text)))
+		src = append(src, errPtr.text...)
+		src = append(src, errPtr.payload...)
+		src = append(src, byte(ValueKindGroupEnd), byte(ValueKindGroupEnd))
+	case ValueKindGroup:
+		v := unsafe.Slice((*Attr)(unsafe.Pointer(attr.Value.srl.(*groupPtr))), attr.Value.num)
+		for _, vv := range v {
+			src = AppendSerialized(src, vv)
+		}
+		src = append(src, byte(ValueKindGroupEnd))
 	case ValueKindBool, ValueKindInt8, ValueKindUint8:
 		src = append(src, byte(attr.Value.num))
 	case
@@ -60,16 +77,6 @@ func AppendSerialized(src []byte, attr Attr) []byte {
 		src = binary.AppendUvarint(src, attr.Value.num)
 		v := attr.Value.srl.(*bytesPtr)
 		src = append(src, unsafe.Slice((*byte)(unsafe.Pointer(v)), attr.Value.num)...)
-	case ValueKindError:
-		errPtr := (*Error)(unsafe.Pointer(attr.Value.srl.(*errorPtr)))
-		src = binary.AppendUvarint(src, uint64(len(errPtr.payload)))
-		src = append(src, errPtr.payload...)
-	case ValueKindErrorEmbed:
-		errPtr := (*Error)(unsafe.Pointer(attr.Value.srl.(*errorPtr)))
-		src = binary.AppendUvarint(src, uint64(len(errPtr.text)))
-		src = append(src, errPtr.text...)
-		src = binary.AppendUvarint(src, uint64(len(errPtr.payload)))
-		src = append(src, errPtr.payload...)
 	case ValueKindSliceBool:
 		src = binary.AppendUvarint(src, attr.Value.num)
 		v := unsafe.Slice((*byte)(unsafe.Pointer(attr.Value.srl.(*boolSlicePtr))), attr.Value.num)
@@ -148,12 +155,6 @@ func AppendSerialized(src []byte, attr Attr) []byte {
 		for _, vv := range v {
 			src = binary.AppendUvarint(src, uint64(len(vv)))
 			src = append(src, vv...)
-		}
-	case ValueKindGroup:
-		src = binary.AppendUvarint(src, attr.Value.num)
-		v := unsafe.Slice((*Attr)(unsafe.Pointer(attr.Value.srl.(*groupPtr))), attr.Value.num)
-		for _, vv := range v {
-			src = AppendSerialized(src, vv)
 		}
 	}
 

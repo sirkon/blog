@@ -42,13 +42,6 @@ func ErrorNodeForeignErrorText(txt string) Attr {
 	}
 }
 
-func ErrorNodeForeignErrorFormat(txt string) Attr {
-	return Attr{
-		Key:  txt,
-		kind: ValueKindForeignErrorFormat,
-	}
-}
-
 func ErrorNodePhantomContext() Attr {
 	return Attr{
 		kind: ValueKindPhantomContextNode,

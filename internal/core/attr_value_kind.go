@@ -18,8 +18,11 @@ const (
 	ValueKindJustContextInheritedNode ValueKind = 5
 	ValueKindLocationNode             ValueKind = 6
 	ValueKindForeignErrorText         ValueKind = 7
-	ValueKindForeignErrorFormat       ValueKind = 8
-	ValueKindPhantomContextNode       ValueKind = 10
+	ValueKindPhantomContextNode       ValueKind = 8
+	ValueKindGroup                    ValueKind = 9
+	ValueKindError                    ValueKind = 10
+	ValueKindErrorEmbed               ValueKind = 11
+	ValueKindGroupEnd                 ValueKind = 12
 
 	// --- Group 2: Payload / base types (32+) ---
 
@@ -27,29 +30,24 @@ const (
 	ValueKindTime     ValueKind = 33
 	ValueKindDuration ValueKind = 34
 	ValueKindInt      ValueKind = 35
-	ValueKindInt8     ValueKind = 36
-	ValueKindInt16    ValueKind = 37
-	ValueKindInt32    ValueKind = 38
-	ValueKindInt64    ValueKind = 39
-	ValueKindUint     ValueKind = 40
-	ValueKindUint8    ValueKind = 41
-	ValueKindUint16   ValueKind = 42
-	ValueKindUint32   ValueKind = 43
-	ValueKindUint64   ValueKind = 44
-	ValueKindFloat32  ValueKind = 45
-	ValueKindFloat64  ValueKind = 46
-	ValueKindString   ValueKind = 47
-	ValueKindBytes    ValueKind = 48
-	ValueKindErrorRaw ValueKind = 49
+	ValueKindIvar     ValueKind = 36
+	ValueKindInt8     ValueKind = 37
+	ValueKindInt16    ValueKind = 38
+	ValueKindInt32    ValueKind = 39
+	ValueKindInt64    ValueKind = 40
+	ValueKindUint     ValueKind = 41
+	ValueKindUvar     ValueKind = 42
+	ValueKindUint8    ValueKind = 43
+	ValueKindUint16   ValueKind = 44
+	ValueKindUint32   ValueKind = 45
+	ValueKindUint64   ValueKind = 46
+	ValueKindFloat32  ValueKind = 47
+	ValueKindFloat64  ValueKind = 48
+	ValueKindString   ValueKind = 49
+	ValueKindBytes    ValueKind = 50
+	ValueKindErrorRaw ValueKind = 51
 
-	// --- Group 3: Complex structs and slices (64+) ---
-
-	// ValueKindError keeps just a collected payload and compute error
-	// message based on it.
-	ValueKindError ValueKind = 64
-	// ValueKindErrorEmbed keeps an error AND a text at the same time.
-	ValueKindErrorEmbed ValueKind = 65
-	ValueKindGroup      ValueKind = 66
+	// --- Group 3: Slices (64+) ---
 
 	ValueKindSliceBool    ValueKind = 70
 	ValueKindSliceInt     ValueKind = 71
@@ -68,12 +66,12 @@ const (
 
 	ValueKindMax ValueKind = 255
 
+	// There're ValueKind values at 256 and further to represent [Attr] with predefined keys, where their
+	// lowest byte represents a kind and the upper 7 bytes refer a key index.
+
 	ValuePredefinedNameContext  = 1 << 8
 	ValuePredefinedNameText     = 2 << 8
 	ValuePredefinedNameLocation = 3 << 8
-
-	// There're ValueKind values at 257 and further to represent [Attr] with predefined keys, where their
-	// lowest byte represents a kind and the upper 7 bytes refer a key index.
 )
 
 func (k ValueKind) String() string {
@@ -92,10 +90,16 @@ func (k ValueKind) String() string {
 		return "LocationNode"
 	case ValueKindForeignErrorText:
 		return "ForeignErrorText"
-	case ValueKindForeignErrorFormat:
-		return "ForeignErrorFormat"
 	case ValueKindPhantomContextNode:
 		return "PhantomContextNode"
+	case ValueKindGroup:
+		return "blog.Group"
+	case ValueKindError:
+		return "beer.Error"
+	case ValueKindErrorEmbed:
+		return "ForeignWrap(beer.Error)"
+	case ValueKindGroupEnd:
+		return "group.end"
 	case ValueKindBool:
 		return "bool"
 	case ValueKindTime:
@@ -132,10 +136,6 @@ func (k ValueKind) String() string {
 		return "[]byte"
 	case ValueKindErrorRaw:
 		return "error"
-	case ValueKindError:
-		return "beer.Error"
-	case ValueKindErrorEmbed:
-		return "ForeignWrap(beer.Error)"
 	case ValueKindSliceBool:
 		return "[]bool"
 	case ValueKindSliceInt:
@@ -164,8 +164,6 @@ func (k ValueKind) String() string {
 		return "[]float64"
 	case ValueKindSliceString:
 		return "[]string"
-	case ValueKindGroup:
-		return "blog.Group"
 	default:
 		// Probably a predefined thing?
 		if k>>8 <= ValueKind(len(PredefinedKeys)) {
