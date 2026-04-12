@@ -35,12 +35,28 @@ a buffer.
 | BenchmarkBinLogCtx3                 | 3005066    | 405.9 ns/op | 0 B/op   | 0 allocs/op  |
 | BenchmarkZeroLogCtx3                | 2924299    | 409.5 ns/op | 0 B/op   | 0 allocs/op  |
 
-Looks nice, right? Quicker than top of the line lib. Unfortunately, not so nice on Intel, meaning the target platform.
-No, it is quick here as well. But the CRC32 thing I compute for reliability slows things down a bit:
+or, side-by-side
 
-```shell
-❯ go test -bench=. -cpu 1  -tags binary_log | benchfmt md
-```
+| Test             | BinLog      | ZeroLog     | Ratio (2nd/1st) |
+|------------------|-------------|-------------|-----------------|
+| short            | 45.30 ns/op | 59.09 ns/op | 1.30x           |
+| mid              | 46.62 ns/op | 62.00 ns/op | 1.33x           |
+| longer           | 51.32 ns/op | 64.94 ns/op | 1.27x           |
+| long             | 63.81 ns/op | 68.96 ns/op | 1.08x           |
+| escape           | 44.56 ns/op | 59.66 ns/op | 1.34x           |
+| WorstCaseForBlog | 137.9 ns/op | 113.4 ns/op | 0.82x           |
+| RealLog          | 61.05 ns/op | 72.30 ns/op | 1.18x           |
+| RealErrorLog     | 218.1 ns/op | 602.4 ns/op | 2.76x           |
+| Ctx3             | 385.4 ns/op | 401.0 ns/op | 1.04x           |
+
+Factors that inherently slows things down for blog:
+
+- CRC32 computation. It is 5-15 ns tax depending on the length of the payload. May be more for larger events.
+  Still worth it: when a couple of bits rotted within an event we lose a log record with blog. 
+  And we may lose the entire rest of log with CBOR.
+- FluentAPI on ZeroLog wins with large contexts (WorstCase thing). 
+  This is an IR tax to pay for variadic style API I intentionally follow for "stick to business" semantics.
+
 
 **System**
 
@@ -48,33 +64,20 @@ No, it is quick here as well. But the CRC32 thing I compute for reliability slow
 |-------|--------|--------------------------------------|----------|
 | linux | amd64  | 12th Gen Intel(R) Core(TM) i7-12700K | benching |
 
-**Results**
+**Comparison: BinLog vs ZeroLog**
 
-| Benchmark                           | Iterations | ns/op       | B/op     | allocs/op    |
-|-------------------------------------|------------|-------------|----------|--------------|
-| BenchmarkBinLog/short               | 19695277   | 53.32 ns/op | 0 B/op   | 0 allocs/op  |
-| BenchmarkBinLog/mid                 | 21063266   | 57.21 ns/op | 0 B/op   | 0 allocs/op  |
-| BenchmarkBinLog/longer              | 18552622   | 64.26 ns/op | 0 B/op   | 0 allocs/op  |
-| BenchmarkBinLog/long                | 16185788   | 74.20 ns/op | 0 B/op   | 0 allocs/op  |
-| BenchmarkBinLog/escape              | 22307642   | 53.82 ns/op | 0 B/op   | 0 allocs/op  |
-| BenchmarkZeroLog/short              | 19008963   | 62.57 ns/op | 0 B/op   | 0 allocs/op  |
-| BenchmarkZeroLog/mid                | 18331288   | 64.22 ns/op | 0 B/op   | 0 allocs/op  |
-| BenchmarkZeroLog/longer             | 18139684   | 64.90 ns/op | 0 B/op   | 0 allocs/op  |
-| BenchmarkZeroLog/long               | 17599312   | 67.42 ns/op | 0 B/op   | 0 allocs/op  |
-| BenchmarkZeroLog/escape             | 18663783   | 63.72 ns/op | 0 B/op   | 0 allocs/op  |
-| BenchmarkWorstCaseForBinLog/blog    | 7287872    | 165.2 ns/op | 0 B/op   | 0 allocs/op  |
-| BenchmarkWorstCaseForBinLog/zerolog | 9368173    | 127.9 ns/op | 0 B/op   | 0 allocs/op  |
-| BenchmarkRealLog/blog               | 15224050   | 78.71 ns/op | 0 B/op   | 0 allocs/op  |
-| BenchmarkRealLog/zerolog            | 15656210   | 75.87 ns/op | 0 B/op   | 0 allocs/op  |
-| BenchmarkRealErrorLog/blog          | 4252406    | 282.2 ns/op | 592 B/op | 2 allocs/op  |
-| BenchmarkRealErrorLog/zerolog       | 1000000    | 1014 ns/op  | 832 B/op | 14 allocs/op |
-| BenchmarkBinLogCtx3                 | 2594637    | 464.6 ns/op | 0 B/op   | 0 allocs/op  |
-| BenchmarkZeroLogCtx3                | 2583954    | 463.1 ns/op | 0 B/op   | 0 allocs/op  |
+| Test             | BinLog      | ZeroLog     | Ratio (2nd/1st) |
+|------------------|-------------|-------------|-----------------|
+| short            | 52.57 ns/op | 66.86 ns/op | 1.27x           |
+| mid              | 57.28 ns/op | 69.04 ns/op | 1.21x           |
+| longer           | 64.12 ns/op | 69.55 ns/op | 1.08x           |
+| long             | 74.72 ns/op | 71.48 ns/op | 0.96x           |
+| escape           | 53.58 ns/op | 68.19 ns/op | 1.27x           |
+| WorstCaseForBlog | 169.5 ns/op | 137.1 ns/op | 0.81x           |
+| RealLog          | 79.55 ns/op | 85.61 ns/op | 1.08x           |
+| RealErrorLog     | 279.7 ns/op | 1022 ns/op  | 3.65x           |
+| Ctx3             | 463.0 ns/op | 496.2 ns/op | 1.07x           |
 
-CRC32 tax slows things down. Basically, the wider the payload, the slower the blog because of not that
-fast CRC32 computation on it as I have seen during profiling. Still quick enough and, that's important,
-reliable. One broken record is just one broken record thanks to format. You'll have troubles
-with CBOR in this case.
 
 ## Against zerolog with JSON.
 
@@ -84,28 +87,19 @@ with CBOR in this case.
 |--------|--------|--------------|----------|
 | darwin | arm64  | Apple M4 Pro | benching |
 
-**Results**
+**Comparison: BinLog vs ZeroLog**
 
-| Benchmark                           | Iterations | ns/op       | B/op     | allocs/op    |
-|-------------------------------------|------------|-------------|----------|--------------|
-| BenchmarkBinLog/short               | 25346467   | 44.60 ns/op | 0 B/op   | 0 allocs/op  |
-| BenchmarkBinLog/mid                 | 26017599   | 46.27 ns/op | 0 B/op   | 0 allocs/op  |
-| BenchmarkBinLog/longer              | 23034637   | 51.70 ns/op | 0 B/op   | 0 allocs/op  |
-| BenchmarkBinLog/long                | 18912330   | 63.34 ns/op | 0 B/op   | 0 allocs/op  |
-| BenchmarkBinLog/escape              | 27744702   | 44.17 ns/op | 0 B/op   | 0 allocs/op  |
-| BenchmarkZeroLog/short              | 14273784   | 83.13 ns/op | 0 B/op   | 0 allocs/op  |
-| BenchmarkZeroLog/mid                | 12903502   | 93.24 ns/op | 0 B/op   | 0 allocs/op  |
-| BenchmarkZeroLog/longer             | 10456923   | 116.5 ns/op | 0 B/op   | 0 allocs/op  |
-| BenchmarkZeroLog/long               | 7318567    | 165.5 ns/op | 0 B/op   | 0 allocs/op  |
-| BenchmarkZeroLog/escape             | 11435082   | 103.8 ns/op | 0 B/op   | 0 allocs/op  |
-| BenchmarkWorstCaseForBinLog/blog    | 8672649    | 137.2 ns/op | 0 B/op   | 0 allocs/op  |
-| BenchmarkWorstCaseForBinLog/zerolog | 6981853    | 168.9 ns/op | 0 B/op   | 0 allocs/op  |
-| BenchmarkRealLog/blog               | 18966522   | 62.67 ns/op | 0 B/op   | 0 allocs/op  |
-| BenchmarkRealLog/zerolog            | 11251533   | 105.1 ns/op | 0 B/op   | 0 allocs/op  |
-| BenchmarkRealErrorLog/blog          | 5675106    | 206.7 ns/op | 592 B/op | 2 allocs/op  |
-| BenchmarkRealErrorLog/zerolog       | 1799848    | 669.2 ns/op | 832 B/op | 14 allocs/op |
-| BenchmarkBinLogCtx3                 | 2951659    | 407.0 ns/op | 0 B/op   | 0 allocs/op  |
-| BenchmarkZeroLogCtx3                | 1734714    | 679.9 ns/op | 0 B/op   | 0 allocs/op  |
+| Test             | BinLog      | ZeroLog     | Ratio (2nd/1st) |
+|------------------|-------------|-------------|-----------------|
+| short            | 44.16 ns/op | 81.29 ns/op | 1.84x           |
+| mid              | 45.58 ns/op | 92.15 ns/op | 2.02x           |
+| longer           | 51.04 ns/op | 113.3 ns/op | 2.22x           |
+| long             | 65.10 ns/op | 150.1 ns/op | 2.31x           |
+| escape           | 44.38 ns/op | 103.1 ns/op | 2.32x           |
+| WorstCaseForBlog | 134.5 ns/op | 173.8 ns/op | 1.29x           |
+| RealLog          | 61.87 ns/op | 106.6 ns/op | 1.72x           |
+| RealErrorLog     | 210.6 ns/op | 678.3 ns/op | 3.22x           |
+| Ctx3             | 385.3 ns/op | 664.7 ns/op | 1.73x           |
 
 and here are the Intel results:
 
@@ -115,25 +109,16 @@ and here are the Intel results:
 |-------|--------|--------------------------------------|----------|
 | linux | amd64  | 12th Gen Intel(R) Core(TM) i7-12700K | benching |
 
-**Results**
+**Comparison: BinLog vs ZeroLog**
 
-| Benchmark                           | Iterations | ns/op       | B/op     | allocs/op    |
-|-------------------------------------|------------|-------------|----------|--------------|
-| BenchmarkBinLog/short               | 20460490   | 54.00 ns/op | 0 B/op   | 0 allocs/op  |
-| BenchmarkBinLog/mid                 | 20874595   | 57.61 ns/op | 0 B/op   | 0 allocs/op  |
-| BenchmarkBinLog/longer              | 18491712   | 64.79 ns/op | 0 B/op   | 0 allocs/op  |
-| BenchmarkBinLog/long                | 16092429   | 74.70 ns/op | 0 B/op   | 0 allocs/op  |
-| BenchmarkBinLog/escape              | 22185975   | 54.18 ns/op | 0 B/op   | 0 allocs/op  |
-| BenchmarkZeroLog/short              | 12011266   | 99.09 ns/op | 0 B/op   | 0 allocs/op  |
-| BenchmarkZeroLog/mid                | 10359259   | 115.2 ns/op | 0 B/op   | 0 allocs/op  |
-| BenchmarkZeroLog/longer             | 9243702    | 128.9 ns/op | 0 B/op   | 0 allocs/op  |
-| BenchmarkZeroLog/long               | 7741206    | 155.4 ns/op | 0 B/op   | 0 allocs/op  |
-| BenchmarkZeroLog/escape             | 8834079    | 136.0 ns/op | 0 B/op   | 0 allocs/op  |
-| BenchmarkWorstCaseForBinLog/blog    | 6831591    | 175.5 ns/op | 0 B/op   | 0 allocs/op  |
-| BenchmarkWorstCaseForBinLog/zerolog | 5855564    | 204.6 ns/op | 0 B/op   | 0 allocs/op  |
-| BenchmarkRealLog/blog               | 14692437   | 81.62 ns/op | 0 B/op   | 0 allocs/op  |
-| BenchmarkRealLog/zerolog            | 9036188    | 132.0 ns/op | 0 B/op   | 0 allocs/op  |
-| BenchmarkRealErrorLog/blog          | 4223503    | 283.6 ns/op | 592 B/op | 2 allocs/op  |
-| BenchmarkRealErrorLog/zerolog       | 1000000    | 1132 ns/op  | 832 B/op | 14 allocs/op |
-| BenchmarkBinLogCtx3                 | 2498659    | 479.8 ns/op | 0 B/op   | 0 allocs/op  |
-| BenchmarkZeroLogCtx3                | 1462959    | 819.9 ns/op | 0 B/op   | 0 allocs/op  |
+| Test             | BinLog      | ZeroLog     | Ratio (2nd/1st) |
+|------------------|-------------|-------------|-----------------|
+| short            | 53.04 ns/op | 102.8 ns/op | 1.94x           |
+| mid              | 57.23 ns/op | 118.1 ns/op | 2.06x           |
+| longer           | 64.43 ns/op | 130.7 ns/op | 2.03x           |
+| long             | 74.65 ns/op | 160.5 ns/op | 2.15x           |
+| escape           | 53.79 ns/op | 139.4 ns/op | 2.59x           |
+| WorstCaseForBlog | 182.4 ns/op | 211.7 ns/op | 1.16x           |
+| RealLog          | 80.08 ns/op | 134.0 ns/op | 1.67x           |
+| RealErrorLog     | 283.0 ns/op | 1139 ns/op  | 4.02x           |
+| Ctx3             | 487.3 ns/op | 832.9 ns/op | 1.71x           |

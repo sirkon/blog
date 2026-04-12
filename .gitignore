@@ -11,6 +11,9 @@
 # Test binary, built with `go test -c`
 *.test
 
+# blog outputs
+*.bin
+
 # Code coverage profiles and other test artifacts
 *.out
 coverage.*
@@ -31,4 +34,5 @@ go.work.sum
 .idea/
 .vscode/
 .zed/
+
 
