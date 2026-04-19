@@ -57,6 +57,18 @@ Factors that inherently slows things down for blog:
 - FluentAPI on ZeroLog wins with large contexts (WorstCase thing). 
   This is an IR tax to pay for variadic style API I intentionally follow for "stick to business" semantics.
 
+Why does blog faster on smaller things?
+
+Because unlike the CBOR, there're some predefined field:
+
+- time
+- level
+- message
+
+They are all stored on (almost) fixed positions without field names. Otherwise, same performance
+encoding functions are used and there's no performance difference field-to-field. And there's no difference
+between FluentAPI and variadic API on shorter contexts: I have an IR, Zerolog needs to return Event structure,
+so we both need to copy. Longer contexts hits blog since they cause variadic slice allocation.
 
 **System**
 

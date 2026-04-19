@@ -49,20 +49,20 @@ const (
 
 	// --- Group 3: Slices (64+) ---
 
-	ValueKindSliceBool    ValueKind = 70
-	ValueKindSliceInt     ValueKind = 71
-	ValueKindSliceInt8    ValueKind = 72
-	ValueKindSliceInt16   ValueKind = 73
-	ValueKindSliceInt32   ValueKind = 74
-	ValueKindSliceInt64   ValueKind = 75
-	ValueKindSliceUint    ValueKind = 76
-	ValueKindSliceUint8   ValueKind = 77
-	ValueKindSliceUint16  ValueKind = 78
-	ValueKindSliceUint32  ValueKind = 79
-	ValueKindSliceUint64  ValueKind = 80
-	ValueKindSliceFloat32 ValueKind = 81
-	ValueKindSliceFloat64 ValueKind = 82
-	ValueKindSliceString  ValueKind = 83
+	ValueKindSliceBool    ValueKind = 64
+	ValueKindSliceInt     ValueKind = 65
+	ValueKindSliceInt8    ValueKind = 66
+	ValueKindSliceInt16   ValueKind = 67
+	ValueKindSliceInt32   ValueKind = 68
+	ValueKindSliceInt64   ValueKind = 69
+	ValueKindSliceUint    ValueKind = 70
+	ValueKindSliceUint8   ValueKind = 71
+	ValueKindSliceUint16  ValueKind = 72
+	ValueKindSliceUint32  ValueKind = 73
+	ValueKindSliceUint64  ValueKind = 74
+	ValueKindSliceFloat32 ValueKind = 75
+	ValueKindSliceFloat64 ValueKind = 76
+	ValueKindSliceString  ValueKind = 77
 
 	ValueKindMax ValueKind = 255
 

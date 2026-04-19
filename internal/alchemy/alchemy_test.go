@@ -241,6 +241,13 @@ func TestLargeFile(t *testing.T) {
 	}
 }
 
+func Test1000Keys(t *testing.T) {
+	g := NewLogGenerator()
+	for range 1000 {
+		t.Logf("\r"+`&b%q,`, g.generateRandomKey())
+	}
+}
+
 func TestAlchemy(t *testing.T) {
 	beer.InsertLocationsOn()
 
