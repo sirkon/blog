@@ -68,7 +68,7 @@ func Int(key string, value int) Attr {
 		Value: Value{
 			num: uint64(value),
 		},
-		kind: ValueKindInt,
+		kind: ValueKindInt64,
 	}
 }
 
@@ -128,7 +128,7 @@ func Uint(key string, value uint) Attr {
 		Value: Value{
 			num: uint64(value),
 		},
-		kind: ValueKindUint,
+		kind: ValueKindUint64,
 	}
 }
 
@@ -328,9 +328,9 @@ func Ints(key string, value []int) Attr {
 		Key: key,
 		Value: Value{
 			num: uint64(len(value)),
-			srl: (*intSlicePtr)(unsafe.Pointer(unsafe.SliceData(value))),
+			srl: (*int64SlicePtr)(unsafe.Pointer(unsafe.SliceData(value))),
 		},
-		kind: ValueKindSliceInt,
+		kind: ValueKindSliceInt64,
 	}
 }
 
@@ -393,9 +393,9 @@ func Uints(key string, value []uint) Attr {
 		Key: key,
 		Value: Value{
 			num: uint64(len(value)),
-			srl: (*uintSlicePtr)(unsafe.Pointer(unsafe.SliceData(value))),
+			srl: (*uint64SlicePtr)(unsafe.Pointer(unsafe.SliceData(value))),
 		},
-		kind: ValueKindSliceUint,
+		kind: ValueKindSliceUint64,
 	}
 }
 

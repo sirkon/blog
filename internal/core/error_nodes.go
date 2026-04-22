@@ -17,7 +17,7 @@ func ErrorNodeWrap(msg string) Attr {
 func ErrorNodeWrapInherited(msg string) Attr {
 	return Attr{
 		Key:  msg,
-		kind: ValueKindWrapInheritedNode,
+		kind: ValueKindWrapNode,
 	}
 }
 
@@ -31,7 +31,7 @@ func ErrorNodeJustContext() Attr {
 func ErrorNodeJustContextInherited() Attr {
 	return Attr{
 		Key:  "",
-		kind: ValueKindJustContextInheritedNode,
+		kind: ValueKindJustContextNode,
 	}
 }
 

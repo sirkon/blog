@@ -36,19 +36,17 @@ loop:
 		payload = payload[1:]
 		switch kind {
 		case ValueKindJustContextNode:
-			continue
+			if !e.sufficient {
+				nodes = append(nodes, nil)
+				strInsert = e.wrap.Error()
+			}
+			break loop
 		case ValueKindPhantomContextNode:
 			if !e.sufficient {
 				nodes = append(nodes, nil)
 				strInsert = e.wrap.Error()
 			}
 			continue
-		case ValueKindJustContextInheritedNode:
-			if !e.sufficient {
-				nodes = append(nodes, nil)
-				strInsert = e.wrap.Error()
-			}
-			break loop
 		case ValueKindGroupEnd:
 			continue
 		}
@@ -61,9 +59,6 @@ loop:
 		payload = payload[varintLength+int(length):]
 		switch kind {
 		case ValueKindNewNode, ValueKindWrapNode:
-			nodes = append(nodes, key)
-
-		case ValueKindWrapInheritedNode:
 			if !e.sufficient {
 				nodes = append(nodes, nil)
 				strInsert = e.wrap.Error()
@@ -71,6 +66,7 @@ loop:
 			} else {
 				nodes = append(nodes, key)
 			}
+
 		case ValueKindForeignErrorText:
 			nodes = append(nodes, key)
 
@@ -85,8 +81,8 @@ loop:
 		case ValueKindInt32, ValueKindUint32, ValueKindFloat32:
 			payload = payload[4:]
 		case ValueKindTime, ValueKindDuration,
-			ValueKindInt, ValueKindInt64,
-			ValueKindUint, ValueKindUint64,
+			ValueKindInt64,
+			ValueKindUint64,
 			ValueKindFloat64:
 			payload = payload[8:]
 		case ValueKindString, ValueKindBytes:
@@ -99,9 +95,7 @@ loop:
 			payload = payload[varintLength+2*int(length):]
 		case ValueKindSliceInt32, ValueKindSliceUint32, ValueKindSliceFloat32:
 			payload = payload[varintLength+4*int(length):]
-		case ValueKindSliceInt, ValueKindSliceInt64,
-			ValueKindSliceUint, ValueKindSliceUint64,
-			ValueKindSliceFloat64:
+		case ValueKindSliceInt64, ValueKindSliceUint64, ValueKindSliceFloat64:
 			payload = payload[varintLength+8*int(length):]
 		case ValueKindSliceString:
 			length, varintLength = binary.Uvarint(payload)
@@ -146,8 +140,6 @@ func SufficientErrorBytes(payload []byte) []byte {
 		switch kind {
 		case ValueKindJustContextNode, ValueKindPhantomContextNode:
 			continue
-		case ValueKindJustContextInheritedNode:
-			break
 		}
 
 		var key []byte
@@ -158,10 +150,6 @@ func SufficientErrorBytes(payload []byte) []byte {
 		payload = payload[varintLength+int(length):]
 		switch kind {
 		case ValueKindNewNode, ValueKindWrapNode:
-			nodes = append(nodes, key)
-			totalLen += len(key)
-
-		case ValueKindWrapInheritedNode:
 			nodes = append(nodes, key)
 			totalLen += len(key)
 
@@ -180,9 +168,7 @@ func SufficientErrorBytes(payload []byte) []byte {
 		case ValueKindInt32, ValueKindUint32, ValueKindFloat32:
 			payload = payload[4:]
 		case ValueKindTime, ValueKindDuration,
-			ValueKindInt, ValueKindInt64,
-			ValueKindUint, ValueKindUint64,
-			ValueKindFloat64:
+			ValueKindInt64, ValueKindUint64, ValueKindFloat64:
 			payload = payload[8:]
 		case ValueKindString, ValueKindBytes:
 			length, varintLength = binary.Uvarint(payload)
@@ -194,9 +180,7 @@ func SufficientErrorBytes(payload []byte) []byte {
 			payload = payload[varintLength+2*int(length):]
 		case ValueKindSliceInt32, ValueKindSliceUint32, ValueKindSliceFloat32:
 			payload = payload[varintLength+4*int(length):]
-		case ValueKindSliceInt, ValueKindSliceInt64,
-			ValueKindSliceUint, ValueKindSliceUint64,
-			ValueKindSliceFloat64:
+		case ValueKindSliceInt64, ValueKindSliceUint64, ValueKindSliceFloat64:
 			payload = payload[varintLength+8*int(length):]
 		case ValueKindSliceString:
 			length, varintLength = binary.Uvarint(payload)

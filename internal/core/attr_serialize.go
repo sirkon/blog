@@ -16,7 +16,7 @@ func AppendSerialized(src []byte, attr Attr) []byte {
 	src = append(src, byte(kind))
 
 	switch attr.kind {
-	case ValueKindJustContextNode, ValueKindJustContextInheritedNode, ValueKindPhantomContextNode:
+	case ValueKindJustContextNode, ValueKindPhantomContextNode:
 		return src
 	}
 
@@ -60,8 +60,8 @@ func AppendSerialized(src []byte, attr Attr) []byte {
 	case ValueKindBool, ValueKindInt8, ValueKindUint8:
 		src = append(src, byte(attr.Value.num))
 	case
-		ValueKindInt, ValueKindInt64,
-		ValueKindUint, ValueKindUint64,
+		ValueKindInt64,
+		ValueKindUint64,
 		ValueKindFloat64,
 		ValueKindTime, ValueKindDuration:
 		src = binary.LittleEndian.AppendUint64(src, attr.Value.num)
@@ -81,12 +81,6 @@ func AppendSerialized(src []byte, attr Attr) []byte {
 		src = binary.AppendUvarint(src, attr.Value.num)
 		v := unsafe.Slice((*byte)(unsafe.Pointer(attr.Value.srl.(*boolSlicePtr))), attr.Value.num)
 		src = append(src, v...)
-	case ValueKindSliceInt:
-		src = binary.AppendUvarint(src, attr.Value.num)
-		v := unsafe.Slice((*int)(unsafe.Pointer(attr.Value.srl.(*intSlicePtr))), attr.Value.num)
-		for _, vv := range v {
-			src = binary.LittleEndian.AppendUint64(src, uint64(vv))
-		}
 	case ValueKindSliceInt8:
 		src = binary.AppendUvarint(src, attr.Value.num)
 		v := unsafe.Slice((*byte)(unsafe.Pointer(attr.Value.srl.(*int8SlicePtr))), attr.Value.num)
@@ -106,12 +100,6 @@ func AppendSerialized(src []byte, attr Attr) []byte {
 	case ValueKindSliceInt64:
 		src = binary.AppendUvarint(src, attr.Value.num)
 		v := unsafe.Slice((*int64)(unsafe.Pointer(attr.Value.srl.(*int64SlicePtr))), attr.Value.num)
-		for _, vv := range v {
-			src = binary.LittleEndian.AppendUint64(src, uint64(vv))
-		}
-	case ValueKindSliceUint:
-		src = binary.AppendUvarint(src, attr.Value.num)
-		v := unsafe.Slice((*uint)(unsafe.Pointer(attr.Value.srl.(*uintSlicePtr))), attr.Value.num)
 		for _, vv := range v {
 			src = binary.LittleEndian.AppendUint64(src, uint64(vv))
 		}

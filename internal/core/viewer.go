@@ -93,7 +93,9 @@ func ProcessRecord(line []byte, viewer RecordViewer) (err error) {
 		return NewError("line does not start with 0xFF")
 	}
 	checksum := binary.LittleEndian.Uint32(line[1:5])
-	if line[5] != 0xFE {return NewError("line does not have 0xFE on its 6th byte")}
+	if line[5] != 0xFE {
+		return NewError("line does not have 0xFE on its 6th byte")
+	}
 
 	length, line, err := readUvarint(line[6:])
 	if err != nil {
@@ -173,7 +175,7 @@ func (d *payloadDeconstructor) deconstructNode(payload []byte, visitor RecordCon
 	// Read kind. TODO validate kind.
 	kind := ValueKind(payload[0])
 	switch kind {
-	case ValueKindJustContextNode, ValueKindJustContextInheritedNode:
+	case ValueKindJustContextNode:
 		d.stack = append(d.stack, kind)
 		visitor.EnterErrorStage(ErrorProcessingStageContext, nil)
 		return payload[1:]
@@ -186,8 +188,8 @@ func (d *payloadDeconstructor) deconstructNode(payload []byte, visitor RecordCon
 		switch tip {
 		case ValueKindGroup:
 			visitor.LeaveGroup()
-		case ValueKindJustContextNode, ValueKindJustContextInheritedNode,
-			ValueKindNewNode, ValueKindWrapNode, ValueKindWrapInheritedNode:
+		case ValueKindJustContextNode,
+			ValueKindNewNode, ValueKindWrapNode:
 			visitor.LeaveErrorStage()
 		case ValueKindError:
 			buf := make([]byte, 0, d.errTextLen+(len(d.errText)-1)*2)
@@ -200,8 +202,10 @@ func (d *payloadDeconstructor) deconstructNode(payload []byte, visitor RecordCon
 			visitor.LeaveError(buf)
 		case ValueKindErrorEmbed:
 			visitor.LeaveError(d.embedErrText)
+		default:
 		}
 		return payload[1:]
+	default:
 	}
 
 	payload = d.deconstructPayloadNode(payload[1:], kind, visitor)
@@ -221,7 +225,7 @@ func (d *payloadDeconstructor) deconstructPayloadNode(
 		// Predefined key.
 		var knownIndex int
 		knownIndex, payload = mustReadUvarint(payload)
-		kkk := PredefinedKeys[knownIndex]
+		kkk := PredefinedKey(PredefinedKeyCode(knownIndex))
 		key = unsafe.Slice(unsafe.StringData(kkk), len(kkk))
 	}
 
@@ -250,13 +254,6 @@ func (d *payloadDeconstructor) deconstructPayloadNodeValue(
 			d.errText = append(d.errText, key)
 			d.errTextLen += len(key)
 		}
-	case ValueKindWrapInheritedNode:
-		d.stack = append(d.stack, kind)
-		visitor.EnterErrorStage(ErrorProcessingStageWrap, key)
-		if d.errTextInProgress {
-			d.errText = append(d.errText, key)
-			d.errTextLen += len(key)
-		}
 	case ValueKindLocationNode:
 		var line int
 		line, payload = mustReadUvarint(payload)
@@ -278,10 +275,6 @@ func (d *payloadDeconstructor) deconstructPayloadNodeValue(
 		var v uint64
 		v, payload = mustReadU64(payload)
 		visitor.Duration(key, time.Duration(v))
-	case ValueKindInt:
-		var v uint64
-		v, payload = mustReadU64(payload)
-		visitor.Int(key, int(v))
 	case ValueKindInt8:
 		var v uint8
 		v, payload = mustReadU8(payload)
@@ -298,10 +291,6 @@ func (d *payloadDeconstructor) deconstructPayloadNodeValue(
 		var v uint64
 		v, payload = mustReadU64(payload)
 		visitor.Int64(key, int64(v))
-	case ValueKindUint:
-		var v uint64
-		v, payload = mustReadU64(payload)
-		visitor.Uint(key, uint(v))
 	case ValueKindUint8:
 		var v uint8
 		v, payload = mustReadU8(payload)
@@ -383,7 +372,7 @@ func (d *payloadDeconstructor) deconstructPayloadNodeValue(
 		case ValueKindSliceUint32:
 			visitor.Uint32Slice(key, res)
 		}
-	case ValueKindSliceInt64, ValueKindSliceUint64, ValueKindSliceFloat64, ValueKindSliceInt, ValueKindSliceUint:
+	case ValueKindSliceInt64, ValueKindSliceUint64, ValueKindSliceFloat64:
 		var length int
 		length, payload = mustReadUvarint(payload)
 		if length == 0 {
@@ -395,10 +384,6 @@ func (d *payloadDeconstructor) deconstructPayloadNodeValue(
 			res[i] = v
 		}
 		switch kind {
-		case ValueKindSliceInt:
-			visitor.IntSlice(key, unsafe.Slice((*int)(unsafe.Pointer(unsafe.SliceData(res))), len(res)))
-		case ValueKindSliceUint:
-			visitor.UintSlice(key, unsafe.Slice((*uint)(unsafe.Pointer(unsafe.SliceData(res))), len(res)))
 		case ValueKindSliceInt64:
 			visitor.Int64Slice(key, unsafe.Slice((*int64)(unsafe.Pointer(unsafe.SliceData(res))), len(res)))
 		case ValueKindSliceFloat64:

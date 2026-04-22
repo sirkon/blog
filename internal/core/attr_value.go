@@ -60,10 +60,6 @@ type (
 		whateverPtr
 		bool
 	}
-	intSlicePtr struct {
-		whateverPtr
-		int
-	}
 	int8SlicePtr struct {
 		whateverPtr
 		int8
@@ -79,10 +75,6 @@ type (
 	int64SlicePtr struct {
 		whateverPtr
 		int64
-	}
-	uintSlicePtr struct {
-		whateverPtr
-		uint
 	}
 	uint8SlicePtr struct {
 		whateverPtr
