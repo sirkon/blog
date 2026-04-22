@@ -203,6 +203,7 @@ func LogPanicInfo(v any) Attr {
 //
 //   - 0xFF
 //   - CRC32 of record content (starting from time to the end).
+//   - 0xFE
 //   - UVARINT(record_length)
 //   - ----------------------
 //   - Version (2 bytes)
@@ -243,7 +244,7 @@ func (l *Logger) logLevel(
 	// Omit the first 1 + 4 + 10 bytes as we store 0xff + CRC32 + uvarint(record_size) in here.
 	// This uvarint part's length may differ, and we may need an adjustment to pack that header tightly.
 	record := *logDataPtr
-	record = record[0:15]
+	record = record[0:16]
 
 	// Now, put fields.
 
@@ -287,13 +288,14 @@ func (l *Logger) logLevel(
 	}
 
 	// Get CRC32, adjust the placement, put header and form a data to write.
-	checksum := crc32.Checksum(record[15:], crcTable)
-	width := 5 + (bits.Len64(uint64(len(record)-15))+6)/7 // 0xFF + CRC + UVARINT(record.length)
-	data := record[15-width : 15-width]
-	data = append(data, 0xff)
+	checksum := crc32.Checksum(record[16:], crcTable)
+	width := 6 + (bits.Len64(uint64(len(record)-16))+6)/7 // 0xFF + CRC + 0xFE + UVARINT(record.length)
+	data := record[16-width : 16-width]
+	data = append(data, 0xFF)
 	data = binary.LittleEndian.AppendUint32(data, checksum)
-	data = binary.AppendUvarint(data, uint64(len(record)-15))
-	data = data[:width+len(record)-15]
+	data = append(data, 0xFE)
+	data = binary.AppendUvarint(data, uint64(len(record)-16))
+	data = data[:width+len(record)-16]
 	*logDataPtr = data
 
 	// Write collected data.

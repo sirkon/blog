@@ -85,7 +85,7 @@ func ProcessRecord(line []byte, viewer RecordViewer) (err error) {
 	//	}
 	// }()
 
-	if len(line) < 5 {
+	if len(line) < 6 {
 		return NewError("line is too short")
 	}
 
@@ -93,8 +93,9 @@ func ProcessRecord(line []byte, viewer RecordViewer) (err error) {
 		return NewError("line does not start with 0xFF")
 	}
 	checksum := binary.LittleEndian.Uint32(line[1:5])
+	if line[5] != 0xFE {return NewError("line does not have 0xFE on its 6th byte")}
 
-	length, line, err := readUvarint(line[5:])
+	length, line, err := readUvarint(line[6:])
 	if err != nil {
 		return WrapError(err, "read record size")
 	}
