@@ -19,6 +19,7 @@
 coverage.*
 *.coverprofile
 profile.cov
+*.pgo
 
 # Dependency directories (remove the comment below to include it)
 # vendor/
@@ -35,4 +36,5 @@ go.work.sum
 .vscode/
 .zed/
 
+.DS_Store
 
