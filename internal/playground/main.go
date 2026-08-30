@@ -15,13 +15,16 @@ import (
 )
 
 func main() {
-	logWriter := blog.NewPrettyWriter(os.Stdout)
+	logWriterCertain := blog.NewPrettyWriter(os.Stdout)
+	var logWriter io.Writer = logWriterCertain
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
 		case "light":
-			logWriter.WithLightTerminal()
+			logWriterCertain.WithLightTerminal()
 		case "dark":
-			logWriter.WithDarkTerminal()
+			logWriterCertain.WithDarkTerminal()
+		case "json":
+			logWriter = blog.NewJSONWriter(os.Stdout)
 		}
 	}
 	log, err := core.NewLogger(

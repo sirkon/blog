@@ -1,7 +1,6 @@
 package benching
 
 import (
-	"encoding/json"
 	"fmt"
 	"math"
 	"math/rand/v2"
@@ -84,23 +83,8 @@ func BenchmarkBinLog(b *testing.B) {
 			}
 		})
 	}
-}
 
-func BenchmarkZeroLog(b *testing.B) {
-	for _, payload := range noCtxPayload {
-		b.Run(payload[0], func(b *testing.B) {
-			b.ReportAllocs()
-			for b.Loop() {
-				zlogger.Error().Msg(payload[1])
-			}
-		})
-	}
-}
-
-// --- Worst case for binlog --------
-
-func BenchmarkWorstCaseForBlog(b *testing.B) {
-	b.Run("BinLog", func(b *testing.B) {
+	b.Run("worst-case", func(b *testing.B) {
 		b.ReportAllocs()
 		for b.Loop() {
 			binlog.Error(
@@ -115,33 +99,7 @@ func BenchmarkWorstCaseForBlog(b *testing.B) {
 		}
 	})
 
-	b.Run("ZeroLog", func(b *testing.B) {
-		b.ReportAllocs()
-		for b.Loop() {
-			zlogger.Error().
-				Int("i1", 1).Str("t1", "1").
-				Int("i2", 2).Str("t2", "2").
-				Int("i3", 3).Str("t3", "3").
-				Int("i4", 4).Str("t4", "4").
-				Int("i5", math.MaxInt).Str("t5", "5").
-				Msg("test")
-		}
-	})
-}
-
-// --- Real log sample ---------
-
-func BenchmarkRealLog(b *testing.B) {
-	// Sample to produce {
-	// 	"level":"info",       // These two will not be set up obviously
-	// 	"ts":1710708422.123,  //
-	// 	"caller":"auth/service.go:42",
-	// 	"msg":"User logged in",
-	// 	"user_id":"u-9912",
-	// 	"ip_address":"192.168.1.15"
-	// }
-
-	b.Run("BinLog", func(b *testing.B) {
+	b.Run("real-log", func(b *testing.B) {
 		b.ReportAllocs()
 		for b.Loop() {
 			binlog.Info(nil, "User logged in",
@@ -151,19 +109,7 @@ func BenchmarkRealLog(b *testing.B) {
 		}
 	})
 
-	b.Run("ZeroLog", func(b *testing.B) {
-		b.ReportAllocs()
-		for b.Loop() {
-			zlogger.Info().
-				Str("user-id", "u-9912").
-				Str("ip_address", "192.168.1.15").
-				Msg("User logged in")
-		}
-	})
-}
-
-func BenchmarkRealErrorLog(b *testing.B) {
-	b.Run("BinLog", func(b *testing.B) {
+	b.Run("error", func(b *testing.B) {
 		b.ReportAllocs()
 		for b.Loop() {
 			err := beer.New("failed to commit stream").
@@ -179,7 +125,55 @@ func BenchmarkRealErrorLog(b *testing.B) {
 		}
 	})
 
-	b.Run("ZeroLog", func(b *testing.B) {
+	b.Run("ctx-3", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			for _, p := range ctx3Payload {
+				binlog.Error(nil,
+					midMsg,
+					blog.Int("int", p.Int),
+					blog.Str("str", p.Str),
+					blog.Int("count", p.Count),
+				)
+			}
+		}
+	})
+}
+
+func BenchmarkZeroLog(b *testing.B) {
+	for _, payload := range noCtxPayload {
+		b.Run(payload[0], func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				zlogger.Error().Msg(payload[1])
+			}
+		})
+	}
+
+	b.Run("worst-case", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			zlogger.Error().
+				Int("i1", 1).Str("t1", "1").
+				Int("i2", 2).Str("t2", "2").
+				Int("i3", 3).Str("t3", "3").
+				Int("i4", 4).Str("t4", "4").
+				Int("i5", math.MaxInt).Str("t5", "5").
+				Msg("test")
+		}
+	})
+
+	b.Run("real-log", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			zlogger.Info().
+				Str("user-id", "u-9912").
+				Str("ip_address", "192.168.1.15").
+				Msg("User logged in")
+		}
+	})
+
+	b.Run("error", func(b *testing.B) {
 		b.ReportAllocs()
 		for b.Loop() {
 			err := fmt.Errorf("failed to commit stream user-role[%s] method[%s] response-code[%s]",
@@ -192,40 +186,20 @@ func BenchmarkRealErrorLog(b *testing.B) {
 			zlogger.Error().Err(err).Msg("failed to merge documents")
 		}
 	})
-}
 
-// --- Message + 3 context elements -----------
-
-func BenchmarkBinLogCtx3(b *testing.B) {
-	b.ReportAllocs()
-	data, _ := json.MarshalIndent(ctx3Payload, "", "  ")
-	b.Log(string(data))
-	for b.Loop() {
-		for _, p := range ctx3Payload {
-			binlog.Error(nil,
-				midMsg,
-				blog.Int("int", p.Int),
-				blog.Str("str", p.Str),
-				blog.Int("count", p.Count),
-			)
+	b.Run("ctx-3", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			for _, p := range ctx3Payload {
+				zlogger.Error().
+					Int("int", p.Int).
+					Str("str", p.Str).
+					Int("count", p.Count).
+					Msg(midMsg)
+			}
 		}
-	}
+	})
 }
-
-func BenchmarkZeroLogCtx3(b *testing.B) {
-	b.ReportAllocs()
-	for b.Loop() {
-		for _, p := range ctx3Payload {
-			zlogger.Error().
-				Int("int", p.Int).
-				Str("str", p.Str).
-				Int("count", p.Count).
-				Msg(midMsg)
-		}
-	}
-}
-
-// --------------------------------------------
 
 type logCtx3 struct {
 	Int   int
