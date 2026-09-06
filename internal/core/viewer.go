@@ -319,12 +319,10 @@ func (d *payloadDeconstructor) deconstructPayloadNodeValue(
 		var v []byte
 		v, payload = mustReadString(payload)
 		visitor.Str(key, v)
-	case ValueKindBytes, ValueKindSliceInt8, ValueKindSliceUint8:
+	case ValueKindSliceInt8, ValueKindSliceUint8:
 		var v []byte
 		v, payload = mustReadString(payload)
 		switch kind {
-		case ValueKindBytes:
-			visitor.Bytes(key, v)
 		case ValueKindSliceUint8:
 			visitor.Uint8Slice(key, v)
 		case ValueKindSliceInt8:

@@ -73,10 +73,6 @@ func AppendSerialized(src []byte, attr Attr) []byte {
 		src = binary.AppendUvarint(src, attr.Value.num)
 		v := attr.Value.srl.(*stringPtr)
 		src = append(src, unsafe.Slice((*byte)(unsafe.Pointer(v)), attr.Value.num)...)
-	case ValueKindBytes:
-		src = binary.AppendUvarint(src, attr.Value.num)
-		v := attr.Value.srl.(*bytesPtr)
-		src = append(src, unsafe.Slice((*byte)(unsafe.Pointer(v)), attr.Value.num)...)
 	case ValueKindSliceBool:
 		src = binary.AppendUvarint(src, attr.Value.num)
 		v := unsafe.Slice((*byte)(unsafe.Pointer(attr.Value.srl.(*boolSlicePtr))), attr.Value.num)

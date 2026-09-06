@@ -85,10 +85,7 @@ loop:
 			ValueKindUint64,
 			ValueKindFloat64:
 			payload = payload[8:]
-		case ValueKindString, ValueKindBytes:
-			length, varintLength = binary.Uvarint(payload)
-			payload = payload[varintLength+int(length):]
-		case ValueKindSliceBool, ValueKindSliceInt8, ValueKindSliceUint8:
+		case ValueKindString, ValueKindSliceBool, ValueKindSliceInt8, ValueKindSliceUint8:
 			length, varintLength = binary.Uvarint(payload)
 			payload = payload[varintLength+int(length):]
 		case ValueKindSliceInt16, ValueKindSliceUint16:
@@ -170,10 +167,7 @@ func SufficientErrorBytes(payload []byte) []byte {
 		case ValueKindTime, ValueKindDuration,
 			ValueKindInt64, ValueKindUint64, ValueKindFloat64:
 			payload = payload[8:]
-		case ValueKindString, ValueKindBytes:
-			length, varintLength = binary.Uvarint(payload)
-			payload = payload[varintLength+int(length):]
-		case ValueKindSliceBool, ValueKindSliceInt8, ValueKindSliceUint8:
+		case ValueKindString, ValueKindSliceBool, ValueKindSliceInt8, ValueKindSliceUint8:
 			length, varintLength = binary.Uvarint(payload)
 			payload = payload[varintLength+int(length):]
 		case ValueKindSliceInt16, ValueKindSliceUint16:

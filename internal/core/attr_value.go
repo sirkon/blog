@@ -44,10 +44,6 @@ type (
 		whateverPtr
 		byte
 	}
-	bytesPtr struct {
-		whateverPtr
-		byte
-	}
 	attrsPtr struct {
 		whateverPtr
 		Attr

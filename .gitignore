@@ -38,3 +38,6 @@ go.work.sum
 
 .DS_Store
 
+.zig-cache/
+test_wal.log
+

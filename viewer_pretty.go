@@ -86,8 +86,7 @@ func (g *PrettyWriter) Write(p []byte) (n int, err error) {
 		g.colorReset()
 
 		g.setBackCtx()
-		// TODO добавить ANSI для контекста
-		if len(g.view.ctx.errors) == 0 {
+		if len(g.view.ctx.errors) == 0 && g.view.ctx.groups == 0 {
 			g.walkJSON()
 		} else {
 			g.buf = append(g.buf, '\n')

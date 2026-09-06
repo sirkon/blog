@@ -44,6 +44,7 @@ func (p *packedDeconstruct) ContextVisitor() core.RecordContextVisitor {
 
 type packedContextDeconstruct struct {
 	errors   []int
+	groups   int
 	prev     int
 	stack    []int
 	tree     *packedTree
@@ -52,6 +53,7 @@ type packedContextDeconstruct struct {
 
 func (p *packedContextDeconstruct) Reset() {
 	p.errors = p.errors[:0]
+	p.groups = 0
 	p.stack = p.stack[:0]
 	p.prev = -1
 }
@@ -188,6 +190,7 @@ func (p *packedContextDeconstruct) StrSlice(key []byte, seq [][]byte) {
 func (p *packedContextDeconstruct) EnterGroup(key []byte) {
 	p.prev = p.tree.AddObjectRoot(p.prev, key)
 	p.stack = append(p.stack, p.prev)
+	p.groups++
 }
 
 func (p *packedContextDeconstruct) LeaveGroup() {

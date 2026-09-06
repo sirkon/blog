@@ -241,8 +241,8 @@ func Bytes(key string, value []byte) Attr {
 		kind = ValueKindString
 		ptr = (*stringPtr)(unsafe.Pointer(unsafe.SliceData(value)))
 	} else {
-		kind = ValueKindBytes
-		ptr = (*bytesPtr)(unsafe.Pointer(unsafe.SliceData(value)))
+		kind = ValueKindSliceUint8
+		ptr = (*uint8SlicePtr)(unsafe.Pointer(unsafe.SliceData(value)))
 	}
 
 	return Attr{
