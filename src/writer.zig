@@ -838,8 +838,6 @@ test "pretty sink writes a rendered record to a file" {
 // `--listen=-` protocol stream, which hangs `zig build test`, so this only
 // runs when stdout is an interactive terminal.
 test "pretty sink manual try" {
-    if (std.posix.system.isatty(1) == 0) return;
-
     const pool_mod = @import("buffer_pool.zig");
     const logger = @import("logger.zig");
     const writer_mod = @import("writer.zig");
@@ -851,9 +849,35 @@ test "pretty sink manual try" {
     var pool = try Pool.init(allocator, 2, 2048);
     defer pool.deinit();
 
-    const Writer = writer_mod.FdWriter;
-    const Sink = writer_mod.PrettySink(Writer);
-    var writer = Writer.init(2);
+    const memWriter = struct {
+        const Self = @This();
+
+        allocator: std.mem.Allocator,
+        buf: std.ArrayList(u8),
+
+        pub fn init(alloc: std.mem.Allocator) !Self {
+            return .{
+                .allocator = alloc,
+                .buf = try std.ArrayList(u8).initCapacity(alloc, 16384),
+            };
+        }
+
+        pub fn deinit(self: *Self) void {
+            self.buf.deinit(self.allocator);
+        }
+
+        pub fn write(self: *Self, buf: []const u8) std.Io.Writer.Error!usize {
+            self.buf.appendSlice(self.allocator, buf) catch {
+                return std.Io.Writer.Error.WriteFailed;
+            };
+            return buf.len;
+        }
+    };
+
+    const Sink = writer_mod.PrettySink(memWriter);
+    var writer = try memWriter.init(std.testing.allocator);
+    defer writer.deinit();
+
     var sink = Sink.init(
         std.testing.allocator,
         .light,
@@ -875,4 +899,6 @@ test "pretty sink manual try" {
         .weight = 80,
         .age = 44,
     });
+
+    std.debug.print("{s}", .{writer.buf.items});
 }
