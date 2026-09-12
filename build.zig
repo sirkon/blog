@@ -16,6 +16,13 @@ pub fn build(b: *std.Build) void {
     // between Debug, ReleaseSafe, ReleaseFast, and ReleaseSmall. Here we do not
     // set a preferred release mode, allowing the user to decide how to optimize.
     const optimize = b.standardOptimizeOption(.{});
+
+    const jsonescape_dep = b.dependency("jsonescape", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    const jsonescape_mod = jsonescape_dep.module("json_escape");
+
     // It's also possible to define more custom flags to toggle optional features
     // of this build script using `b.option()`. All defined flags (including
     // target and optimize options) will be listed when running `zig build --help`
@@ -39,7 +46,14 @@ pub fn build(b: *std.Build) void {
         // Later on we'll use this module as the root module of a test executable
         // which requires us to specify a target.
         .target = target,
+        // The buffer pool guards its free list with a libc-backed pthread mutex.
+        .link_libc = true,
+        .imports = &.{
+            .{ .name = "jsonescape", .module = jsonescape_mod },
+        },
     });
+
+    // Here we define an executable. An executable needs to have a root module
 
     // Here we define an executable. An executable needs to have a root module
     // which needs to expose a `main` function. While we could add a main function
@@ -79,6 +93,7 @@ pub fn build(b: *std.Build) void {
                 // can be extremely useful in case of collisions (which can happen
                 // importing modules from different packages).
                 .{ .name = "blog", .module = mod },
+                .{ .name = "jsonescape", .module = jsonescape_mod },
             },
         }),
     });

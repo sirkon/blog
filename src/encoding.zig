@@ -1,5 +1,6 @@
 const std = @import("std");
 const builtin = @import("builtin");
+const consts = @import("consts.zig");
 const decoding = @import("decoding.zig");
 
 /// Calculates the exact encoded size of an anonymous struct in bytes.
@@ -43,6 +44,9 @@ pub fn getStructEncodedSize(struct_val: anytype) usize {
                 } else {
                     totalSize += 8;
                 }
+            },
+            .comptime_int => {
+                totalSize += @sizeOf(consts.MinimalInt(val));
             },
             .float => |info| {
                 if (info.bits == 32) {
@@ -99,6 +103,26 @@ pub fn getStructEncodedSize(struct_val: anytype) usize {
                         "supported by the rules. Field: " ++ field.name);
                 }
             },
+            .array => |arrInfo| {
+                // Fixed-size arrays encode like slices: varint(len) + len items.
+                const Child = arrInfo.child;
+                totalSize += varintSize(arrInfo.len);
+
+                switch (@typeInfo(Child)) {
+                    .bool => totalSize += arrInfo.len * 1,
+                    .int => |info| {
+                        const item_size: usize =
+                            if (info.bits <= 8) 1 else if (info.bits <= 16) 2 else if (info.bits <= 32) 4 else 8;
+                        totalSize += arrInfo.len * item_size;
+                    },
+                    .float => |info| {
+                        const item_size: usize = if (info.bits == 32) 4 else 8;
+                        totalSize += arrInfo.len * item_size;
+                    },
+                    else => @compileError("Arrays of type " ++ @typeName(Child) ++
+                        " inside anonymous structs are not supported by the rules."),
+                }
+            },
             else => @compileError("Unsupported base type in anonymous struct: " ++ @typeName(FieldType)),
         }
     }
@@ -139,6 +163,9 @@ pub fn append(dst: [*]u8, v: anytype) [*]u8 {
                 @memcpy(ptr[0..size], std.mem.asBytes(&leVal));
                 return ptr + size;
             }
+        },
+        .comptime_int => {
+            return append(dst, consts.minimalInt(v));
         },
         .float => |info| {
             const size = info.bits / 8;
@@ -201,6 +228,11 @@ pub fn append(dst: [*]u8, v: anytype) [*]u8 {
             }
 
             @compileError("Unsupported pointer type " ++ @typeName(T) ++ ".");
+        },
+        .array => |arrInfo| {
+            // Fixed-size arrays share the slice wire layout: varint(len) + items.
+            const slice: []const arrInfo.child = &v;
+            return append(dst, slice);
         },
         else => @compileError("Unsupported type " ++ @typeName(T) ++ "."),
     }

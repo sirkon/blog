@@ -1,21 +1,15 @@
 const std = @import("std");
-const builtin = @import("builtin");
 const consts = @import("consts.zig");
 const encoding = @import("encoding.zig");
-// Import your fresh native custom uring package!
-const iouring = @import("iouring.zig");
+const crc32c = @import("crc32c.zig");
 
-/// 🌟 This is just a temporary call-site stack formatter (formerly LoggerContext).
-/// It knows nothing about buffers, IO, or rings—just writes bytes.
+/// A thin cursor over the record payload. It knows nothing about pools, IO,
+/// or log framing, and only appends serialized fields.
 const LogFrame = struct {
-    dst: [*]u8,
     cur: [*]u8,
 
-    pub inline fn init(buffer_ptr: [*]u8) LogFrame {
-        return .{
-            .dst = buffer_ptr,
-            .cur = buffer_ptr + 16, // Skip 16-byte gap for WAL framing header
-        };
+    pub inline fn init(payload_ptr: [*]u8) LogFrame {
+        return .{ .cur = payload_ptr };
     }
 
     pub inline fn appendField(self: *LogFrame, comptime name: []const u8, value: anytype) void {
@@ -25,11 +19,11 @@ const LogFrame = struct {
             break :block switch (@typeInfo(T)) {
                 .bool => .bool,
                 .int => |info| if (info.signedness == .signed) {
-                    // 🌟 FIXED: Using clean block evaluation or explicit switches to avoid ignored literal errors
                     break :block if (info.bits <= 8) .int8 else if (info.bits <= 16) .int16 else if (info.bits <= 32) .int32 else .int64;
                 } else {
                     break :block if (info.bits <= 8) .uint8 else if (info.bits <= 16) .uint16 else if (info.bits <= 32) .uint32 else .uint64;
                 },
+                .comptime_int => consts.intKind(value),
                 .float => |info| if (info.bits == 32) .float32 else .float64,
                 .@"struct" => .nodeGroup,
                 .pointer => |ptrInfo| if (ptrInfo.size == .slice) {
@@ -37,7 +31,7 @@ const LogFrame = struct {
                     break :block switch (@typeInfo(Child)) {
                         .bool => .sliceBool,
                         .int => |info| if (info.signedness == .signed) {
-                            break :block if (info.bits <= 8) .sliceInt8 else if (info.bits <= 16) .sliceInt16 else if (info.bits <= 32) .sliceInt32 else .sliceInt64; // fix slice mapping & typo
+                            break :block if (info.bits <= 8) .sliceInt8 else if (info.bits <= 16) .sliceInt16 else if (info.bits <= 32) .sliceInt32 else .sliceInt64;
                         } else {
                             break :block if (info.bits <= 8) .sliceUint8 else if (info.bits <= 16) .sliceUint16 else if (info.bits <= 32) .sliceUint32 else .sliceUint64;
                         },
@@ -52,12 +46,23 @@ const LogFrame = struct {
                 } else {
                     @compileError("Unsupported pointer type: " ++ @typeName(T));
                 },
+                .array => |arrInfo| {
+                    const Child = arrInfo.child;
+                    break :block switch (@typeInfo(Child)) {
+                        .bool => .sliceBool,
+                        .int => |info| if (info.signedness == .signed) {
+                            break :block if (info.bits <= 8) .sliceInt8 else if (info.bits <= 16) .sliceInt16 else if (info.bits <= 32) .sliceInt32 else .sliceInt64;
+                        } else {
+                            break :block if (info.bits <= 8) .sliceUint8 else if (info.bits <= 16) .sliceUint16 else if (info.bits <= 32) .sliceUint32 else .sliceUint64;
+                        },
+                        .float => |info| if (info.bits == 32) .sliceFloat32 else .sliceFloat64,
+                        else => @compileError("Unsupported array item: " ++ @typeName(Child)),
+                    };
+                },
                 else => @compileError("Unsupported record field type: " ++ @typeName(T)),
             };
         };
 
-        // 🌟 Also fixed a small type-typo here: self.cur is a pointer [*]u8,
-        // assigning self.cur[0] = kind is cleaner, then doing pointer arithmetic.
         self.cur[0] = @intFromEnum(kind);
         self.cur += 1;
 
@@ -79,474 +84,329 @@ const LogFrame = struct {
             },
         }
     }
-
-    pub inline fn render(self: *LogFrame) struct { ptr: [*]const u8, len: usize } {
-        // 1. Calculate exactly how many bytes of useful payload we wrote (from offset 16 onwards)
-        const payload_len = @intFromPtr(self.cur) - @intFromPtr(self.dst + 16);
-
-        // 2. 🌟 EXACT GO COMPATIBLE WIDTH CALCULATION:
-        // bits.Len64(u64(payload_len)) in Go is exactly (64 - @clz(payload_len)) in Zig!
-        // If payload_len is 0, @clz is 64, so bits_len is 0.
-        const bits_len: usize = if (payload_len == 0) 0 else 64 - @clz(payload_len);
-
-        // (bits_len + 6) / 7 is the exact size of Go's binary.Uvarint in bytes
-        const uvarint_size = (bits_len + 6) / 7;
-
-        // Total header width matching Go: 1 (0xFF) + 4 (CRC) + 1 (0xFE) + uvarint_size
-        const width = 6 + uvarint_size;
-
-        // 3. Start the frame strictly at offset 16 - width, just like data := record[16-width:]
-        const result_ptr = self.dst + (16 - width);
-
-        // Index 0: Frame sync byte
-        result_ptr[0] = 0xFF;
-
-        // 4. Slice the raw payload strictly from offset 16 to compute Castagnoli checksum
-        const payload_slice = self.dst[16..][0..payload_len];
-        const checksum = crc32cSoftware(payload_slice);
-
-        // Index 1..4: Write calculated CRC32C (4 bytes, Little Endian)
-        @memcpy(result_ptr[1..5], std.mem.asBytes(&checksum));
-
-        // Index 5: Frame length block token
-        result_ptr[5] = 0xFE;
-
-        // Index 6+: Append payload length uvarint.
-        // It will write exactly uvarint_size bytes, sealing the gap perfectly up to offset 16!
-        _ = encoding.appendVarint(result_ptr + 6, payload_len);
-
-        // Total frame size is the dynamic width + payload_len
-        return .{
-            .ptr = result_ptr,
-            .len = width + payload_len,
-        };
-    }
 };
 
-/// 🌟 THE REAL LOGGER CONTEXT (Your original entity!)
-/// Manages pools, wave bitmaps, connects high-level logging gates with CustomURing IO.
-pub const LoggerContext = struct {
-    const Self = @This();
+/// Width in bytes of a log header for a payload of `payload_len` bytes:
+/// `0xFF + CRC32C(4) + 0xFE + uvarint(payload_len)`.
+/// Matches the Go encoder in `internal/core/logger.go`.
+pub fn headerWidth(payload_len: usize) usize {
+    const bits_len: usize = if (payload_len == 0) 0 else 64 - @clz(payload_len);
+    return 6 + (bits_len + 6) / 7;
+}
 
-    log_allocator: SlotAllocator(128, 2048),
-    ctx_allocator: SlotAllocator(64, 512),
-    log_fd: std.posix.fd_t,
-    ring: *iouring.RawRing, // Points to your custom zero-syscall ring!
+/// Monotonic-free logl clock read via a raw `clock_gettime` syscall.
+/// CLOCK_REALTIME is always 0 in the Linux ABI.
+fn loglClockNs() u64 {
+    var ts: std.os.linux.timespec = undefined;
 
-    pub fn init(log_buf: []u8, ctx_buf: []u8, ring_ptr: *iouring.RawRing, fd: std.posix.fd_t) Self {
-        return .{
-            .log_allocator = SlotAllocator(128, 2048).init(log_buf),
-            .ctx_allocator = SlotAllocator(64, 512).init(ctx_buf),
-            .ring = ring_ptr,
-            .log_fd = fd,
-        };
+    const res = std.os.linux.clock_gettime(.REALTIME, &ts);
+
+    if (res == 0) {
+        @branchHint(.likely);
+        return toUnixNs(ts);
     }
 
-    /// The result returned by the dispatcher to high-level loggers.
-    /// It wraps either a zero-copy fast-path index or a fallback blocking heap chunk.
-    pub const LogBufferResult = union(enum) {
-        /// Fast Path: Global slot index within the 256KiB pool shared with io_uring.
-        stdbuf: u32,
+    return 0;
+}
 
-        /// Slow Path Fallback: Contains a block of memory directly allocated from the heap.
-        heap: struct {
-            allocator: std.mem.Allocator,
-            buf: []u8,
-        },
-    };
+inline fn toUnixNs(ts: std.os.linux.timespec) u64 {
+    return @as(u64, @intCast(ts.sec)) * std.time.ns_per_s + @as(u64, @intCast(ts.nsec));
+}
 
-    pub inline fn get(self: *Self, required_size: usize, heap_allocator: std.mem.Allocator) !LogBufferResult {
-        if (required_size <= 2048) {
-            if (self.log_allocator.allocSlot()) |slot_idx| {
-                return LogBufferResult{ .stdbuf = @intCast(slot_idx) };
-            }
-        }
-        const buf = try heap_allocator.alloc(u8, required_size);
-        return LogBufferResult{ .heap = .{ .allocator = heap_allocator, .buf = buf } };
-    }
-
-    pub inline fn release(self: *Self, slot_index: u32) void {
-        self.log_allocator.freeSlot(slot_index);
-    }
-
-    pub inline fn submitSQ(self: *Self, data_ptr: [*]const u8, len: usize, user_data: u64) !void {
-        // Leverages your custom lock-free SQ advancement loop from iouring.zig
-        std.debug.print("push write of {} bytes", .{len});
-        try self.ring.pushSQ(self.log_fd, data_ptr, len, user_data);
-    }
-};
-
-/// High-Level Logger Engine. Built on top of LoggerContext dispatcher.
-pub const Logger = struct {
-    const Self = @This();
-
-    /// Points to the real per-core memory/IO controller
-    log_ctx: *LoggerContext,
-
-    slot_index: ?usize = null,
-    prefix_ptr: ?[*]const u8 = null,
-    prefix_len: usize = 0,
-
-    pub fn init(log_ctx: *LoggerContext) Self {
-        return .{ .log_ctx = log_ctx };
-    }
-
-    pub fn deinit(self: *Self) void {
-        if (self.slot_index) |idx| {
-            self.log_ctx.ctx_allocator.freeSlot(idx);
-            self.slot_index = null;
-            self.prefix_ptr = null;
-            self.prefix_len = 0;
-        }
-    }
-
-    inline fn writeLog(self: *Self, comptime level: consts.logLevel, comptime msg: []const u8, attrs: anytype) !void {
-        const msg_len = msg.len;
-        const attrs_size = encoding.getStructEncodedSize(attrs);
-        const total_size = 16 + 2 + 8 + 1 + 1 + encoding.varintSize(msg_len) + msg_len + self.prefix_len + attrs_size;
-
-        const buf_res = try self.log_ctx.get(total_size, std.heap.page_allocator);
-        const base_ptr = switch (buf_res) {
-            .stdbuf => |idx| self.log_ctx.log_allocator.getSlotPointer(idx),
-            .heap => |h| h.buf.ptr,
-        };
-
-        // Create our lightweight formatting canvas on stack
-        var frame = LogFrame.init(base_ptr);
-
-        const version: u16 = consts.version;
-        @memcpy(frame.cur[0..2], std.mem.asBytes(&version));
-        frame.cur += 2;
-
-        // 🌟 TOTAL SYSCALL WARFARE: Call sys_clock_gettime directly via kernel ABI
-        // CLOCK_REALTIME is always 0 in Linux ABI
-        const CLOCK_REALTIME: usize = 0;
-
-        // Native kernel timespec layout (2 numbers: seconds and nanoseconds)
-        var raw_ts = struct { tv_sec: isize, tv_nsec: isize }{ .tv_sec = 0, .tv_nsec = 0 };
-
-        // Invoke native Linux syscall via inline assembly macros provided by Zig
-        _ = std.os.linux.syscall2(.clock_gettime, CLOCK_REALTIME, @intFromPtr(&raw_ts));
-
-        const timestamp = (@as(u64, @intCast(raw_ts.tv_sec)) * 1_000_000_000) + @as(u64, @intCast(raw_ts.tv_nsec));
-
-        @memcpy(frame.cur[0..8], std.mem.asBytes(&timestamp));
-        frame.cur += 8;
-
-        frame.cur[0] = @intFromEnum(level);
-        frame.cur += 1;
-
-        frame.cur[0] = 0; // Location placeholder skip
-        frame.cur += 1;
-
-        frame.cur = encoding.appendVarint(frame.cur, msg_len);
-        @memcpy(frame.cur[0..msg_len], msg);
-        frame.cur += msg_len;
-
-        if (self.prefix_len > 0) {
-            @memcpy(frame.cur[0..self.prefix_len], self.prefix_ptr.?);
-            frame.cur += self.prefix_len;
-        }
-
-        const structInfo = @typeInfo(@TypeOf(attrs));
-        inline for (structInfo.@"struct".fields) |field| {
-            frame.appendField(field.name, @field(attrs, field.name));
-        }
-
-        const output = frame.render();
-        const user_data: u64 = switch (buf_res) {
-            .stdbuf => |idx| @intCast(idx),
-            .heap => |h| @intFromPtr(h.buf.ptr) | (@as(u64, 1) << 63),
-        };
-
-        try self.log_ctx.submitSQ(output.ptr, output.len, user_data);
-    }
-
-    pub fn Trace(self: *Self, comptime msg: []const u8, attrs: anytype) !void {
-        try self.writeLog(.trace, msg, attrs);
-    }
-    pub fn Debug(self: *Self, comptime msg: []const u8, attrs: anytype) !void {
-        try self.writeLog(.debug, msg, attrs);
-    }
-    pub fn Info(self: *Self, comptime msg: []const u8, attrs: anytype) !void {
-        try self.writeLog(.info, msg, attrs);
-    }
-    pub fn Warn(self: *Self, comptime msg: []const u8, attrs: anytype) !void {
-        try self.writeLog(.warning, msg, attrs);
-    }
-    pub fn Error(self: *Self, comptime msg: []const u8, attrs: anytype) !void {
-        try self.writeLog(.err, msg, attrs);
-    }
-    pub fn Panic(self: *Self, comptime msg: []const u8, attrs: anytype) !void {
-        try self.writeLog(.panic, msg, attrs);
-    }
-
-    pub fn With(self: *Self, attrs: anytype) !Logger {
-        const slot_idx = self.log_ctx.ctx_allocator.allocSlot() orelse return error.ContextPoolSaturated;
-        const prefix_ptr = self.log_ctx.ctx_allocator.getSlotPointer(slot_idx);
-
-        var frame = LogFrame.init(prefix_ptr);
-        const structInfo = @typeInfo(@TypeOf(attrs));
-        inline for (structInfo.@"struct".fields) |field| {
-            frame.appendField(field.name, @field(attrs, field.name));
-        }
-
-        const prefix_len = @intFromPtr(frame.cur) - @intFromPtr(prefix_ptr + 16);
-
-        return Logger{
-            .log_ctx = self.log_ctx,
-            .slot_index = slot_idx,
-            .prefix_ptr = prefix_ptr + 16,
-            .prefix_len = prefix_len,
-        };
-    }
-};
-
-/// A hyper-optimized, single-threaded rolling wave slot allocator for Event Loop tasks.
-/// 0 atomics anywhere. Total memory lifecycle is managed within a single CPU core.
-pub fn SlotAllocator(comptime total_slots: usize, comptime slot_size: usize) type {
-    comptime {
-        if (total_slots % 64 != 0) {
-            @compileError("total_slots must be a multiple of 64.");
-        }
-        const words = total_slots / 64;
-        if ((words & (words - 1)) != 0) {
-            @compileError("Number of 64-bit words must be a power of 2 for fast wrapping.");
-        }
-    }
-
-    const words_count = total_slots / 64;
-    const bitmap_len_mask = words_count - 1;
-
+/// High-level logger engine over a `BufferPool` and a Sink.
+///
+/// `Pool.get` owns the record memory, the sink's `write` both writes the
+/// record and recycles its buffer, so the logger never touches memory
+/// lifecycle directly. Both are comptime parameters: no vtables, no
+/// indirect calls on the hot path.
+///
+///     var logger = Logger(Pool, Sink).init(&pool, &sink);
+///     logger.warn("something happened", .{ .key = value });
+pub fn Logger(comptime Pool: type, comptime Sink: type) type {
     return struct {
         const Self = @This();
 
-        /// Single unified bitmap for both allocating and releasing slots
-        bitmap: [words_count]u64 = std.mem.zeroes([words_count]u64),
+        pool: *Pool,
+        sink: *Sink,
+        /// Full allocation backing the `With` prefix, so `put` recovers it.
+        prefix_alloc: ?[]u8 = null,
+        /// Payload bytes contributed by `With` (a subview of `prefix_alloc`).
+        prefix: []const u8 = &.{},
 
-        /// Flat contiguous byte buffer backing the slots
-        storage: []u8,
-
-        /// Rolling wave counter tracking the current word pointer index (monotonically increases)
-        wave: usize = 0,
-
-        /// High-speed tracking counter to instantly detect absolute saturation
-        free_count: usize = total_slots,
-
-        pub fn init(buffer: []u8) Self {
-            std.debug.assert(buffer.len >= total_slots * slot_size);
-            return .{ .storage = buffer };
+        pub fn init(pool: *Pool, sink: *Sink) Self {
+            return .{ .pool = pool, .sink = sink };
         }
 
-        /// Allocates a free slot index using a single-threaded rolling wave.
-        /// Fully branchless word-skipping path. Returns null only on absolute saturation.
-        pub inline fn allocSlot(self: *Self) ?usize {
-            if (self.free_count == 0) return null;
-
-            const base_ptr: [*]u64 = @ptrCast(&self.bitmap);
-
-            while (true) {
-                // Calculate wrapped word index via fast bitwise AND
-                const word_idx = self.wave & bitmap_len_mask;
-
-                // 🌟 FIX: Access raw pointer memory directly via index [word_idx]
-                // and invert it using the unyielding bitwise NOT operator '~'
-                const w = ~base_ptr[word_idx];
-
-                // Find the first free bit index using hardware TZCNT instruction (via @ctz in Zig)
-                const empty_bit_idx = @ctz(w);
-
-                if (empty_bit_idx < 64) {
-                    // --- THE HOT PATH (Pure CPU registers, 0 overhead) ---
-                    const global_slot_idx = (word_idx << 6) + empty_bit_idx;
-
-                    // Occupy the slot bit in the bitmap directly via index access
-                    base_ptr[word_idx] |= (@as(u64, 1) << @intCast(empty_bit_idx));
-                    self.free_count -= 1;
-
-                    return global_slot_idx;
-                }
-
-                // --- THE WAVE (Every slot in this word is taken) ---
-                self.wave += 1;
+        pub fn deinit(self: *Self) void {
+            if (self.prefix_alloc) |buf| {
+                self.prefix_alloc = null;
+                self.prefix = &.{};
+                _ = self.pool.put(buf);
             }
         }
 
-        /// Instantly releases a slot bit by index.
-        /// Called inside the same Event Loop thread when CQ processes io_uring completion.
-        pub inline fn freeSlot(self: *Self, index: usize) void {
-            const word_idx = index / 64;
-            const bit_idx = index % 64;
+        /// Returns a child logger whose records carry `attrs` as a prefix.
+        /// One frame is pinned for the child's lifetime and returned by
+        /// `deinit`.
+        pub fn With(self: *Self, attrs: anytype) Self {
+            const attrs_size = encoding.getStructEncodedSize(attrs);
+            const buf = self.pool.get(attrs_size) catch {
+                self.drop();
+                return .{ .pool = self.pool, .sink = self.sink };
+            };
 
-            // Clear the bit directly to 0, making the slot immediately free
-            self.bitmap[word_idx] &= ~(@as(u64, 1) << @intCast(bit_idx));
+            var frame = LogFrame.init(buf.ptr);
+            const attrs_info = @typeInfo(@TypeOf(attrs));
+            inline for (attrs_info.@"struct".fields) |field| {
+                frame.appendField(field.name, @field(attrs, field.name));
+            }
 
-            self.free_count += 1;
+            return .{
+                .pool = self.pool,
+                .sink = self.sink,
+                .prefix_alloc = buf,
+                .prefix = buf,
+            };
         }
 
-        /// Returns a direct raw pointer to the start of the specific slot memory block
-        pub inline fn getSlotPointer(self: *Self, index: usize) [*]u8 {
-            return self.storage.ptr + (index * slot_size);
+        pub fn trace(self: *Self, comptime msg: []const u8, attrs: anytype) void {
+            self.writeRecord(.trace, msg, attrs, loglClockNs());
+        }
+        pub fn debug(self: *Self, comptime msg: []const u8, attrs: anytype) void {
+            self.writeRecord(.debug, msg, attrs, loglClockNs());
+        }
+        pub fn info(self: *Self, comptime msg: []const u8, attrs: anytype) void {
+            self.writeRecord(.info, msg, attrs, loglClockNs());
+        }
+        pub fn warn(self: *Self, comptime msg: []const u8, attrs: anytype) void {
+            self.writeRecord(.warning, msg, attrs, loglClockNs());
+        }
+        pub fn err(self: *Self, comptime msg: []const u8, attrs: anytype) void {
+            self.writeRecord(.err, msg, attrs, loglClockNs());
+        }
+        pub fn panic(self: *Self, comptime msg: []const u8, attrs: anytype) void {
+            self.writeRecord(.panic, msg, attrs, loglClockNs());
+        }
+
+        /// Renders a full log record into a pooled buffer and hands it to the
+        /// sink. Failures drop the record and bump the sink's `dropped`
+        /// counter.
+        inline fn writeRecord(
+            self: *Self,
+            comptime level: consts.logLevel,
+            comptime msg: []const u8,
+            attrs: anytype,
+            timestamp: u64,
+        ) void {
+            const msg_len = msg.len;
+            const attrs_size = encoding.getStructEncodedSize(attrs);
+            const payload_len = 2 + 8 + 1 + 1 + encoding.varintSize(msg_len) + msg_len + self.prefix.len + attrs_size;
+            const width = headerWidth(payload_len);
+            const total = width + payload_len;
+
+            const buf = self.pool.get(total) catch {
+                self.drop();
+                return;
+            };
+
+            // Payload starts right after the header, so the record slice
+            // equals the allocation and `put` recovers it exactly.
+            var pos: usize = width;
+            std.mem.writeInt(u16, buf[pos..][0..2], consts.version, .little);
+            pos += 2;
+            std.mem.writeInt(u64, buf[pos..][0..8], timestamp, .little);
+            pos += 8;
+            buf[pos] = @intFromEnum(level);
+            pos += 1;
+            buf[pos] = 0; // location placeholder
+            pos += 1;
+
+            var cur: [*]u8 = buf.ptr + pos;
+            cur = encoding.appendVarint(cur, msg_len);
+            @memcpy(cur[0..msg_len], msg);
+            cur += msg_len;
+
+            if (self.prefix.len > 0) {
+                @memcpy(cur[0..self.prefix.len], self.prefix);
+                cur += self.prefix.len;
+            }
+
+            var frame = LogFrame{ .cur = cur };
+            const attrs_info = @typeInfo(@TypeOf(attrs));
+            inline for (attrs_info.@"struct".fields) |field| {
+                frame.appendField(field.name, @field(attrs, field.name));
+            }
+            std.debug.assert(@intFromPtr(frame.cur) - @intFromPtr(buf.ptr) == total);
+
+            writeHeader(buf[0..total], payload_len);
+
+            _ = self.sink.write(self.pool, buf[0..total]) catch {
+                self.drop();
+                return;
+            };
+        }
+
+        inline fn drop(self: *Self) void {
+            _ = self.sink.dropped.fetchAdd(1, .monotonic);
         }
     };
 }
 
-const linux = std.os.linux;
-const posix = std.posix;
-
-// Global pre-allocated memory slices for our thread-local core logger pools.
-// Placed in static storage to guarantee absolute 0 runtime allocation costs.
-var test_log_pool_storage: [128 * 2048]u8 = undefined;
-var test_ctx_pool_storage: [64 * 512]u8 = undefined;
-
-// ============================================================================
-// INTEGRATION DUMP TEST (SRUSHCHIY V STDOUT)
-// ============================================================================
-
-pub fn initTestFileLoggerContext(ring: *iouring.RawRing, file_path: []const u8) !LoggerContext {
-    ring.* = try iouring.RawRing.init(1024, null);
-
-    // 🌟 IMMORTAL SYSCALL OPENAT: Open/Create real file for SQPOLL writing
-    // Flags: O_WRONLY (1) | O_CREAT (64) | O_TRUNC (512)
-    const AT_FDCWD: i32 = -100;
-    const flags: u32 = 1 | 64 | 512;
-    const mode: u32 = 0o644; // RW for user, R for group/others
-
-    // Convert slice to null-terminated string safely for syscall
-    var path_buf: [256]u8 = undefined;
-    @memcpy(path_buf[0..file_path.len], file_path);
-    path_buf[file_path.len] = 0;
-
-    const open_res = linux.syscall4(.openat, @bitCast(@as(isize, AT_FDCWD)), @intFromPtr(&path_buf), flags, mode);
-    if (linux.errno(open_res) != .SUCCESS) return error.FileOpenFailed;
-    const log_fd: posix.fd_t = @intCast(open_res);
-
-    return LoggerContext.init(
-        &test_log_pool_storage,
-        &test_ctx_pool_storage,
-        ring,
-        log_fd,
-    );
+/// Writes the log header in front of an already-rendered payload.
+fn writeHeader(record: []u8, payload_len: usize) void {
+    const width = headerWidth(payload_len);
+    record[0] = 0xFF;
+    const checksum = crc32c.hardwareCrc32C(record[width..][0..payload_len]);
+    std.mem.writeInt(u32, record[1..][0..4], checksum, .little);
+    record[5] = 0xFE;
+    _ = encoding.appendVarint(record.ptr + 6, payload_len);
 }
 
-test "dump high-performance binary wal frame straight to file via native sqpoll" {
-    var ring: iouring.RawRing = undefined;
-    defer ring.deinit();
+const expect = std.testing.expect;
+const expectEqual = std.testing.expectEqual;
+const expectEqualSlices = std.testing.expectEqualSlices;
+const decoding = @import("decoding.zig");
 
-    // 1. Bootstrap the LoggerContext dispatcher mapped to a real file log instead of stdout
-    const log_file_name = "test_wal.log";
-    var log_ctx = try initTestFileLoggerContext(&ring, log_file_name);
-    defer _ = linux.close(log_ctx.log_fd); // Close file descriptor on exit
+test "golden log frame bytes (timestamp pinned) and decode round-trip" {
+    const buffer_pool = @import("buffer_pool.zig");
+    const writer = @import("writer.zig");
 
-    var logger = Logger.init(&log_ctx);
+    const allocator = std.testing.allocator;
+    var pool = try buffer_pool.BufferPool(false).init(allocator, 8, 2048);
+    defer pool.deinit();
 
-    var client_logger = try logger.With(.{
-        .domain = "gateway-shard",
-        .index_id = @as(u32, 77),
-    });
-    defer client_logger.deinit();
+    var sink = writer.MemorySink.init(allocator);
+    defer sink.deinit();
 
-    // 2. Fire the real binary wal frame log event!
-    try client_logger.Warn("user payload replication failed", .{
-        .user_id = @as(u64, 888222111),
-        .ticks_elapsed = @as(u32, 451),
-        .payload_chunk = @as([]const u8, "raw_binary_chunk_bytes"),
-        .flags = .{
-            .is_retry = true,
-            .is_corrupted = false,
-        },
-    });
+    var logger = Logger(@TypeOf(pool), @TypeOf(sink)).init(&pool, &sink);
+    logger.writeRecord(.warning, "hi", .{ .n = @as(u32, 7) }, 0x0102030405060708);
 
-    // 3. 🌟 THE REAL HYBRID CQ POLL:
-    // Instead of raw sleeping, we tightly poll the completion ring.
-    // If it's empty, we force the kernel thread to wake up and flush via enter_wait!
-    var spin_count: usize = 0;
-    var bytes_written_by_kernel: i32 = 0;
+    const golden = [_]u8{
+        0xff, 0xc1, 0x5b, 0xbb, 0x4e, 0xfe, 0x16, // header (CRC32C from the Go encoder)
+        0x01, 0x00, // version
+        0x08, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01, // timestamp
+        0x28, // warning
+        0x00, // location
+        0x02, 'h', 'i', // msg
+        0x32, 0x01, 'n', 0x07, 0x00, 0x00, 0x00, // n = u32(7)
+    };
+    try expectEqualSlices(u8, &golden, sink.bytes.items);
 
-    while (true) {
-        if (log_ctx.ring.popCQE()) |cqe| {
-            // Hot path hit! Kernel finished the IO operation
-            bytes_written_by_kernel = cqe.res;
+    // Structural checks against the frozen wire format.
+    const rec = sink.bytes.items;
+    try expectEqual(@as(u8, 0xFF), rec[0]);
+    try expectEqual(@as(u8, 0xFE), rec[5]);
 
-            if (cqe.res < 0) {
-                std.debug.print("\n💀 KERNEL IO_URING WRITE ERROR CODE: {d}\n", .{cqe.res});
-            } else {
-                std.debug.print("\n🚀 SUCCESS! KERNEL WROTE: {d} BYTES TO test_wal.log!\n", .{cqe.res});
-            }
+    var payload_len: u64 = 0;
+    const after_len = try decoding.decodeVarint(&payload_len, rec.ptr + 6);
+    const header_len = @intFromPtr(after_len) - @intFromPtr(rec.ptr);
+    try expectEqual(@as(usize, 7), header_len);
+    try expectEqual(@as(usize, @intCast(payload_len)), rec.len - header_len);
 
-            // Clean up our allocated fast-path slot bit
-            const is_heap_fallback = (cqe.user_data & (@as(u64, 1) << 63)) != 0;
-            if (!is_heap_fallback) {
-                const slot_idx: u32 = @intCast(cqe.user_data);
-                log_ctx.release(slot_idx);
-            }
-            break; // We processed our log event completion, exit the test loop safely
-        } else {
-            spin_count += 1;
-            if (spin_count < 2000) {
-                _ = std.os.linux.sched_yield();
-                continue;
-            }
-
-            // Spin limit reached, total silence.
-            // Forcefully kick the kernel to process entries and wait for at least 1 event!
-            spin_count = 0;
-            try log_ctx.ring.enter_wait(1);
-        }
-    }
-
-    // 4. Non-blocking Completion Queue poll to verify kernel response code
-    while (log_ctx.ring.popCQE()) |cqe| {
-        // 🌟 DIAGNOSTICS: Check if kernel returned negative error codes inside cqe.res!
-        if (cqe.res < 0) {
-            std.debug.print("\n💀 KERNEL IO_URING WRITE ERROR CODE: {d}\n", .{cqe.res});
-        } else {
-            std.debug.print("\n🚀 KERNEL SUCCESSFULLY WROTE: {d} BYTES TO DISK!\n", .{cqe.res});
-        }
-
-        const is_heap_fallback = (cqe.user_data & (@as(u64, 1) << 63)) != 0;
-        if (!is_heap_fallback) {
-            const slot_idx: u32 = @intCast(cqe.user_data);
-            log_ctx.release(slot_idx);
-        }
-    }
+    const stored_crc = std.mem.readInt(u32, rec[1..5], .little);
+    try expectEqual(crc32c.hardwareCrc32C(rec[header_len..]), stored_crc);
 }
 
-/// Pre-computes the REFLECTED Castagnoli (CRC32C) lookup table strictly at compile-time.
-/// Matches Go's hash/crc32 Castagnoli table logic pixel-for-pixel.
-const crc32c_table: [256]u32 = block: {
-    @setEvalBranchQuota(4000);
+test "with prefix is encoded, then returned to the pool on deinit" {
+    const buffer_pool = @import("buffer_pool.zig");
+    const writer = @import("writer.zig");
 
-    var table: [256]u32 = undefined;
-    // 🌟 GO COMPATIBLE REFLECTED POLYNOMIAL (Bit-reversed 0x1EDC6F41)
-    const polynomial: u32 = 0x82F63B78;
+    const allocator = std.testing.allocator;
+    var pool = try buffer_pool.BufferPool(false).init(allocator, 4, 512);
+    defer pool.deinit();
 
-    for (0..256) |i| {
-        var crc = @as(u32, @intCast(i));
-        for (0..8) |_| {
-            if ((crc & 1) == 1) {
-                crc = (crc >> 1) ^ polynomial;
-            } else {
-                crc >>= 1;
-            }
+    var sink = writer.MemorySink.init(allocator);
+    defer sink.deinit();
+
+    var root = Logger(@TypeOf(pool), @TypeOf(sink)).init(&pool, &sink);
+    var child = root.With(.{ .job = "sync" });
+    defer child.deinit();
+
+    try expect(child.prefix_alloc != null);
+    const prefix_buf = child.prefix_alloc.?;
+
+    child.info("started", .{ .n = @as(u8, 1) });
+
+    // Prefix attr ("job" = "sync") must precede the call-site attr.
+    const rec = sink.bytes.items;
+    var payload_len: u64 = 0;
+    const after_len = try decoding.decodeVarint(&payload_len, rec.ptr + 6);
+    var p = after_len;
+
+    const version = std.mem.readInt(u16, p[0..2], .little);
+    try expectEqual(consts.version, version);
+    p += 2 + 8; // version + timestamp
+    p += 1 + 1; // level + location
+
+    var msg_len: u64 = 0;
+    p = try decoding.decodeVarint(&msg_len, p);
+    try expectEqualSlices(u8, "started", p[0..@intCast(msg_len)]);
+    p += msg_len;
+
+    try expectEqual(@intFromEnum(consts.ValueKind.string), p[0]);
+    var name_len: u64 = 0;
+    p = try decoding.decodeVarint(&name_len, p + 1);
+    try expectEqualSlices(u8, "job", p[0..@intCast(name_len)]);
+    p += name_len;
+    var val_len: u64 = 0;
+    p = try decoding.decodeVarint(&val_len, p);
+    try expectEqualSlices(u8, "sync", p[0..@intCast(val_len)]);
+
+    child.deinit();
+    const again = try pool.get(prefix_buf.len);
+    try expectEqual(prefix_buf.ptr, again.ptr);
+    try expect(pool.put(again));
+}
+
+test "drop accounting when the sink fails" {
+    const buffer_pool = @import("buffer_pool.zig");
+
+    const FailingSink = struct {
+        dropped: std.atomic.Value(u64) = .init(0),
+        calls: usize = 0,
+
+        pub fn write(self: *@This(), pool: *buffer_pool.BufferPool(false), buf: []const u8) error{WriteFailed}!usize {
+            self.calls += 1;
+            _ = pool.put(@constCast(buf));
+            return error.WriteFailed;
         }
-        table[i] = crc;
-    }
-    break :block table;
-};
+    };
 
-/// High-performance Software Castagnoli (CRC32C) calculation loop.
-/// Mirroring Go's exact hash/crc32 IEEE/Castagnoli behavior.
-pub inline fn crc32cSoftware(data: []const u8) u32 {
-    // 🌟 CLASSIC INITIALIZATION (Matches Go internal state)
-    var crc: u32 = 0xFFFFFFFF;
+    const allocator = std.testing.allocator;
+    var pool = try buffer_pool.BufferPool(false).init(allocator, 4, 512);
+    defer pool.deinit();
 
-    for (data) |byte| {
-        // Reflected table lookup step
-        const table_idx = @as(u8, @intCast((crc ^ byte) & 0xFF));
-        crc = (crc >> 8) ^ crc32c_table[table_idx];
-    }
+    var sink = FailingSink{};
+    var logger = Logger(@TypeOf(pool), FailingSink).init(&pool, &sink);
 
-    // 🌟 RETURN INVERTED STATE (Matches Go's final ~crc return block)
-    return ~crc;
+    logger.warn("one", .{});
+    logger.err("two", .{});
+    logger.info("three", .{});
+
+    try expectEqual(@as(usize, 3), sink.calls);
+    try expectEqual(@as(u64, 3), sink.dropped.load(.monotonic));
+}
+
+test "drop accounting when the pool is out of memory" {
+    const buffer_pool = @import("buffer_pool.zig");
+    const writer = @import("writer.zig");
+
+    var failing = std.testing.FailingAllocator.init(std.testing.allocator, .{ .fail_index = 3 });
+    const allocator = failing.allocator();
+
+    // Pool init performs 3 allocations; every later heap fallback fails.
+    var pool = try buffer_pool.BufferPool(false).init(allocator, 1, 512);
+    defer pool.deinit();
+
+    var sink = writer.MemorySink.init(std.testing.allocator);
+    defer sink.deinit();
+
+    var logger = Logger(@TypeOf(pool), @TypeOf(sink)).init(&pool, &sink);
+
+    // Longer than the frame, so `get` falls back to the heap, which fails.
+    const big = "x" ** 4096;
+    logger.warn(big, .{});
+
+    try expectEqual(@as(u64, 1), sink.dropped.load(.monotonic));
+    try expectEqual(@as(usize, 0), sink.bytes.items.len);
 }
