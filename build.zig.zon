@@ -33,8 +33,8 @@
     // internet connectivity.
     .dependencies = .{
         .jsonescape = .{
-            .url = "git+https://github.com/sirkon/jsonescape.git#20213f25da68f946d2be3a170180f8a26757bdab",
-            .hash = "jsonescape-0.0.1-AjQcMAksAQCNzUVquh_vJFL590vngcbOnu7Pa5vcSTfo",
+            .url = "git+https://github.com/sirkon/jsonescape.git#0cb0a561089720ae890633dc1b401f3ec6569bb3",
+            .hash = "jsonescape-0.0.2-AjQcMAgsAQDGi9rSvRrEsll7y0WlaIM6XcPTNC8Cd6kv",
         },
     },
     .paths = .{

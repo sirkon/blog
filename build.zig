@@ -21,7 +21,7 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
-    const jsonescape_mod = jsonescape_dep.module("json_escape");
+    const jsonescape_mod = jsonescape_dep.module("jsonescape");
 
     // It's also possible to define more custom flags to toggle optional features
     // of this build script using `b.option()`. All defined flags (including
