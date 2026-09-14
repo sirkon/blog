@@ -992,7 +992,7 @@ fn appendFloat(allocator: std.mem.Allocator, dst: *std.ArrayList(u8), comptime T
 
 /// Shortest round-trip float formatting matching Rust `ryu::Buffer::format`,
 /// including its `.0` suffix on integral values and `NaN`/`inf` spellings.
-fn ryuFormat(buf: []u8, comptime T: type, value: T) []const u8 {
+pub fn ryuFormat(buf: []u8, comptime T: type, value: T) []const u8 {
     if (std.math.isNan(value)) return "NaN";
     const neg = std.math.signbit(value);
     if (value == 0) return if (neg) "-0.0" else "0.0";
@@ -1101,30 +1101,13 @@ fn writeExponent(buf: []u8, out: *usize, e: i64) void {
     }
 }
 
-/// Go-style duration rendering.
-fn appendGoDuration(allocator: std.mem.Allocator, dst: *std.ArrayList(u8), nanos: u64) !void {
-    if (nanos == 0) {
-        try dst.appendSlice(allocator, "0s");
-        return;
-    }
-    if (nanos < 1_000) {
-        var buf: [24]u8 = undefined;
-        const s = std.fmt.bufPrint(&buf, "{d}ns", .{nanos}) catch unreachable;
-        try dst.appendSlice(allocator, s);
-        return;
-    }
-    if (nanos < 1_000_000) {
-        var buf: [24]u8 = undefined;
-        const s = std.fmt.bufPrint(&buf, "{d}\u{B5}s", .{nanos / 1_000}) catch unreachable;
-        try dst.appendSlice(allocator, s);
-        return;
-    }
-    if (nanos < 1_000_000_000) {
-        var buf: [24]u8 = undefined;
-        const s = std.fmt.bufPrint(&buf, "{d}ms", .{nanos / 1_000_000}) catch unreachable;
-        try dst.appendSlice(allocator, s);
-        return;
-    }
+/// Go-style duration rendering into `buf`, returning the written slice.
+/// `buf` must have room for the worst case (`5124095h34m33.709551615s`).
+pub fn goDuration(buf: []u8, nanos: u64) []const u8 {
+    if (nanos == 0) return "0s";
+    if (nanos < 1_000) return std.fmt.bufPrint(buf, "{d}ns", .{nanos}) catch unreachable;
+    if (nanos < 1_000_000) return std.fmt.bufPrint(buf, "{d}\u{B5}s", .{nanos / 1_000}) catch unreachable;
+    if (nanos < 1_000_000_000) return std.fmt.bufPrint(buf, "{d}ms", .{nanos / 1_000_000}) catch unreachable;
 
     var seconds = nanos / 1_000_000_000;
     const n = nanos % 1_000_000_000;
@@ -1133,31 +1116,40 @@ fn appendGoDuration(allocator: std.mem.Allocator, dst: *std.ArrayList(u8), nanos
     const minutes = seconds / 60;
     seconds %= 60;
 
-    var buf: [64]u8 = undefined;
+    var out: usize = 0;
     if (hours > 0) {
-        const s = std.fmt.bufPrint(&buf, "{d}h", .{hours}) catch unreachable;
-        try dst.appendSlice(allocator, s);
+        const s = std.fmt.bufPrint(buf[out..], "{d}h", .{hours}) catch unreachable;
+        out += s.len;
     }
     if (minutes > 0) {
-        const s = std.fmt.bufPrint(&buf, "{d}m", .{minutes}) catch unreachable;
-        try dst.appendSlice(allocator, s);
+        const s = std.fmt.bufPrint(buf[out..], "{d}m", .{minutes}) catch unreachable;
+        out += s.len;
     }
     if (seconds > 0 or n > 0) {
         if (n == 0) {
-            const s = std.fmt.bufPrint(&buf, "{d}s", .{seconds}) catch unreachable;
-            try dst.appendSlice(allocator, s);
+            const s = std.fmt.bufPrint(buf[out..], "{d}s", .{seconds}) catch unreachable;
+            out += s.len;
         } else {
             var frac_buf: [16]u8 = undefined;
             const frac_full = std.fmt.bufPrint(&frac_buf, "{d}", .{1_000_000_000 + n}) catch unreachable;
             const fraction = frac_full[1..];
             var end: usize = 9;
             while (end > 0 and fraction[end - 1] == '0') end -= 1;
-            const head = std.fmt.bufPrint(&buf, "{d}.", .{seconds}) catch unreachable;
-            try dst.appendSlice(allocator, head);
-            try dst.appendSlice(allocator, fraction[0..end]);
-            try dst.appendSlice(allocator, "s");
+            const head = std.fmt.bufPrint(buf[out..], "{d}.", .{seconds}) catch unreachable;
+            out += head.len;
+            @memcpy(buf[out..][0..end], fraction[0..end]);
+            out += end;
+            buf[out] = 's';
+            out += 1;
         }
     }
+    return buf[0..out];
+}
+
+/// Go-style duration rendering appended to an ArrayList.
+fn appendGoDuration(allocator: std.mem.Allocator, dst: *std.ArrayList(u8), nanos: u64) !void {
+    var buf: [64]u8 = undefined;
+    try dst.appendSlice(allocator, goDuration(&buf, nanos));
 }
 
 /// `2006-01-02 15:04:05.000`.
@@ -1912,7 +1904,7 @@ test "compact json golden: full error and location record" {
 const PANIC_TIME: u64 = 1_776_880_099_375_255_000;
 // Stacktrace carried by the reference fixture `blog-rs/src/testdata/panic.bin`
 // (decoded from its gzip message).
-const PANIC_STACK =
+pub const PANIC_STACK =
     "goroutine 56 [running]:\n" ++
     "runtime/debug.Stack()\n" ++
     "\t/Users/denischeremisov/.local/share/mise/installs/go/1.26.2/src/runtime/debug/stack.go:26 +0x64\n" ++

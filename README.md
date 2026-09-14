@@ -8,6 +8,42 @@ Binary logging.
 go get github.com/sirkon/blog
 ```
 
+## Zig module.
+
+The Zig implementation is a self-contained package exporting the `blog` module:
+a `Logger`, a `BufferPool`, and ready-made sinks/writers. Add it as a
+dependency and import the module:
+
+```shell
+zig fetch --save=blog <url-or-path-to-this-package>
+```
+
+```zig
+const blog = @import("blog");
+
+// The concrete pool every sink and Logger is typed against.
+var pool = try blog.BufferPool.init(allocator, 64, 16 * 1024);
+defer pool.deinit();
+
+var sink = blog.MemorySink.init(allocator);
+defer sink.deinit();
+
+var logger = blog.Logger(blog.BufferPool, blog.MemorySink).init(&pool, &sink);
+logger.info("hello", .{ .n = @as(u32, 7) });
+
+var child = logger.With(.{ .job = "sync" });
+defer child.deinit();
+child.warn("child record", .{ .x = @as(i16, -3) });
+```
+
+`FileSink(Writer)` writes frames to any type exposing
+`fn write(self: *Writer, []const u8) E!usize`; `FdWriter` adapts a raw POSIX
+fd, `SyncWriter(Writer)` serializes concurrent writes, `PrettySink(Writer)`
+renders the human-readable tree/JSON view used by the CLI, and
+`JsonSink(Writer)` emits one compact JSON object per record (JSONL). The CLI
+selects the latter with `blog --json`. `blog.BufferPoolFactory` exposes the
+comptime pool factory for the thread-safe variant.
+
 ## Logging output.
 
 Logging output is binary and cannot be viewed directly. But there's a viewer for development where you can see

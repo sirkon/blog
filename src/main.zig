@@ -16,6 +16,7 @@ const usage =
     \\argument also means standard input.
     \\
     \\Options:
+    \\  --json            emit one compact JSON object per record (JSONL)
     \\  --dark            dark-terminal colors (default)
     \\  --light           light-terminal colors
     \\  --no-color        disable ANSI colors
@@ -30,6 +31,8 @@ const Command = struct {
     profile: blog.ColorProfile = blog.ColorProfile.dark,
     /// Explicit timestamp offset; when null the process-local offset is used.
     tz_offset: ?i64 = null,
+    /// Emit one compact JSON object per record instead of a tree.
+    json: bool = false,
     help: bool = false,
 };
 
@@ -71,28 +74,22 @@ fn run(
     var pool = try Pool.init(gpa, 64, 16 * 1024);
     defer pool.deinit();
 
-    var sink = blog.PrettySink(Io.Writer).init(gpa, cmd.profile, out);
-    defer sink.deinit();
-    sink.options = .{
-        .tz_offset_seconds = cmd.tz_offset orelse localUtcOffsetSeconds(io, gpa, tz_env, tzdir),
-    };
-
-    if (cmd.files.len == 0) {
-        const data = try readStdin(io, gpa);
-        defer gpa.free(data);
-        _ = try renderStream(&sink, &pool, data);
+    var dropped: u64 = 0;
+    if (cmd.json) {
+        var sink = blog.JsonSink(Io.Writer).init(gpa, out);
+        defer sink.deinit();
+        try streamFiles(io, gpa, cmd, &sink, &pool);
+        dropped = sink.dropped.load(.monotonic);
     } else {
-        for (cmd.files) |path| {
-            const data = if (std.mem.eql(u8, path, "-"))
-                try readStdin(io, gpa)
-            else
-                try Io.Dir.cwd().readFileAlloc(io, path, gpa, .unlimited);
-            defer gpa.free(data);
-            _ = try renderStream(&sink, &pool, data);
-        }
+        var sink = blog.PrettySink(Io.Writer).init(gpa, cmd.profile, out);
+        defer sink.deinit();
+        sink.options = .{
+            .tz_offset_seconds = cmd.tz_offset orelse localUtcOffsetSeconds(io, gpa, tz_env, tzdir),
+        };
+        try streamFiles(io, gpa, cmd, &sink, &pool);
+        dropped = sink.dropped.load(.monotonic);
     }
 
-    const dropped = sink.dropped.load(.monotonic);
     if (dropped != 0) {
         var err_buffer: [256]u8 = undefined;
         var stderr_writer: Io.File.Writer = .init(.stderr(), io, &err_buffer);
@@ -106,12 +103,36 @@ fn run(
     try out.flush();
 }
 
+/// Streams standard input (or each file argument) through `sink`.
+fn streamFiles(
+    io: Io,
+    gpa: std.mem.Allocator,
+    cmd: Command,
+    sink: anytype,
+    pool: anytype,
+) !void {
+    if (cmd.files.len == 0) {
+        const data = try readStdin(io, gpa);
+        defer gpa.free(data);
+        _ = try renderStream(sink, pool, data);
+        return;
+    }
+    for (cmd.files) |path| {
+        const data = if (std.mem.eql(u8, path, "-"))
+            try readStdin(io, gpa)
+        else
+            try Io.Dir.cwd().readFileAlloc(io, path, gpa, .unlimited);
+        defer gpa.free(data);
+        _ = try renderStream(sink, pool, data);
+    }
+}
+
 /// Splits `data` into `0xFF [CRC×4] 0xFE [uvarint len] payload` frames and
 /// renders each with `sink`, which writes straight to its destination writer.
 /// Records that fail to parse or fail CRC verification are counted in
 /// `sink.dropped` and otherwise skipped. Returns the number of frames seen.
 fn renderStream(
-    sink: *blog.PrettySink(Io.Writer),
+    sink: anytype,
     pool: anytype,
     data: []const u8,
 ) !usize {
@@ -223,6 +244,8 @@ fn parseArgs(allocator: std.mem.Allocator, args: []const []const u8) !Command {
             cmd.profile = blog.ColorProfile.light;
         } else if (std.mem.eql(u8, arg, "--no-color")) {
             cmd.profile = blog.ColorProfile.plain;
+        } else if (std.mem.eql(u8, arg, "--json")) {
+            cmd.json = true;
         } else if (std.mem.eql(u8, arg, "--tz-offset")) {
             i += 1;
             if (i >= args.len) return error.InvalidArguments;
@@ -326,6 +349,43 @@ test "render stream renders consecutive frames" {
         out.written(),
     );
     try expectEqual(@as(u64, 0), sink.dropped.load(.monotonic));
+}
+
+test "render stream renders consecutive frames as json lines" {
+    const a = testing.allocator;
+    var pb = blog.viewer.PB{};
+    defer pb.deinit(a);
+    try pb.header(a, 0, @intFromEnum(blog.consts.logLevel.info));
+    try pb.msg(a, "hello");
+    try pb.key(a, .int64, "n");
+    try pb.le(a, u64, 7);
+
+    const size = frameSize(pb.list.items.len);
+    const frame_buf = try a.alloc(u8, size);
+    defer a.free(frame_buf);
+    frameInto(frame_buf, pb.list.items);
+
+    const Pool = blog.buffer_pool.BufferPool(false);
+    var pool = try Pool.init(a, 4, 4096);
+    defer pool.deinit();
+
+    var out: Io.Writer.Allocating = .init(a);
+    defer out.deinit();
+
+    var sink = blog.JsonSink(Io.Writer).init(a, &out.writer);
+    defer sink.deinit();
+
+    const count = try renderStream(&sink, &pool, frame_buf);
+    try expectEqual(@as(usize, 1), count);
+    try expectEqualStrings(
+        "{\"time\":0,\"level\":\"I\",\"message\":\"hello\",\"n\":7}\n",
+        out.written(),
+    );
+    try expectEqual(@as(u64, 0), sink.dropped.load(.monotonic));
+
+    const cmd = try parseArgs(a, &.{"--json"});
+    defer a.free(cmd.files);
+    try expect(cmd.json);
 }
 
 test "render stream rejects a truncated log" {

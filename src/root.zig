@@ -3,10 +3,19 @@ const std = @import("std");
 const Io = std.Io;
 
 pub const buffer_pool = @import("buffer_pool.zig");
-/// Fixed-frame free-list pool owning all record memory.
-pub const BufferPool = buffer_pool.BufferPool;
 
 pub const writer = @import("writer.zig");
+/// Concrete fixed-frame free-list pool owning all record memory; this is the
+/// type every `Logger`, `MemorySink`, `FileSink`, `SyncWriter` and
+/// `PrettySink` is typed against. Use it directly:
+///
+///     var pool = try blog.BufferPool.init(allocator, 64, 16 * 1024);
+///     var logger = blog.Logger(blog.BufferPool, blog.MemorySink).init(&pool, &sink);
+pub const BufferPool = writer.BufferPool;
+/// Comptime pool factory for callers that need the thread-safe variant or a
+/// custom frame policy. `BufferPoolFactory(false)` is the concrete
+/// `BufferPool`.
+pub const BufferPoolFactory = buffer_pool.BufferPool;
 /// Captures records for tests and in-memory tooling.
 pub const MemorySink = writer.MemorySink;
 /// Synchronous writer over a raw POSIX file descriptor (`std.posix.fd_t`).
@@ -19,6 +28,8 @@ pub const FileSink = writer.FileSink;
 pub const SyncWriter = writer.SyncWriter;
 /// Comptime tree-viewer writer factory over a downstream `Sink` type.
 pub const PrettySink = writer.PrettySink;
+/// Comptime compact-JSONL writer factory over a downstream `Sink` type.
+pub const JsonSink = writer.JsonSink;
 /// Error returned by any log writer when the downstream write fails.
 pub const WriteError = writer.WriteError;
 
@@ -41,17 +52,6 @@ pub const consts = @import("consts.zig");
 /// CRC32C used to verify log frames.
 pub const crc32c = @import("crc32c.zig");
 
-/// This is a documentation comment to explain the `printAnotherMessage` function below.
-///
-/// Accepting an `Io.Writer` instance is a handy way to write reusable code.
-pub fn printAnotherMessage(out: *Io.Writer) Io.Writer.Error!void {
-    try out.print("Run `zig build test` to run the tests.\n", .{});
-}
-
-pub fn add(a: i32, b: i32) i32 {
-    return a + b;
-}
-
 test {
     _ = @import("buffer_pool.zig");
     _ = @import("writer.zig");
@@ -61,8 +61,5 @@ test {
     _ = @import("crc32c.zig");
     _ = @import("viewer.zig");
     _ = @import("render.zig");
-}
-
-test "basic add functionality" {
-    try std.testing.expect(add(3, 7) == 10);
+    _ = @import("jsonsink.zig");
 }

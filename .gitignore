@@ -41,3 +41,6 @@ go.work.sum
 .zig-cache/
 test_wal.log
 
+zig-out/
+zig-pkg/
+

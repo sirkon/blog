@@ -33,6 +33,7 @@ const mutex = @import("mutex.zig");
 const crc32c = @import("crc32c.zig");
 const render = @import("render.zig");
 const viewer = @import("viewer.zig");
+const jsonsink = @import("jsonsink.zig");
 
 /// The pool type every writer's `write` consumes.
 pub const BufferPool = buffer_pool.BufferPool(false);
@@ -302,16 +303,7 @@ pub fn PrettySink(comptime Writer: type) type {
         }
 
         fn renderFrame(self: *Self, frame: []const u8) !void {
-            if (frame.len < 7 or frame[0] != 0xFF or frame[5] != 0xFE) return error.BadFrame;
-
-            const len = try viewer.readUvarint(frame, 6);
-            const start = 6 + len.size;
-            const end = start + @as(usize, @intCast(len.val));
-            if (end != frame.len) return error.BadFrame;
-
-            const payload = frame[start..end];
-            const crc = std.mem.readInt(u32, frame[1..5], .little);
-            if (crc32c.hardwareCrc32C(payload) != crc) return error.CrcMismatch;
+            const payload = try verifyFrame(frame);
 
             try viewer.parseRecord(self.allocator, payload, &self.record);
             self.renderer.profile = self.profile;
@@ -319,6 +311,103 @@ pub fn PrettySink(comptime Writer: type) type {
             try self.renderer.render(&self.scratch, payload, &self.record);
         }
     };
+}
+
+/// Compact-JSONL sink: one line of JSON per record.
+///
+/// Wraps a single-pass transformer (`jsonsink.renderRecord`) that walks each
+/// framed record's payload once and writes compact JSON as it reads. `Writer`
+/// must expose `pub fn write(self: *Writer, bytes: []const u8) E!usize`; on any
+/// framing, CRC or parse failure the record is dropped, nothing is written
+/// downstream, and `dropped` is incremented.
+///
+/// Takes ownership of `buf` and always returns it to `pool`, success or not.
+pub fn JsonSink(comptime Writer: type) type {
+    comptime assertWriter(Writer);
+
+    return struct {
+        const Self = @This();
+
+        allocator: std.mem.Allocator,
+        /// Destination for rendered lines; supplied by the caller. Not owned.
+        out: *Writer,
+        /// Records the logger had to drop before they reached this sink.
+        dropped: std.atomic.Value(u64) = .init(0),
+        /// Reusable per-record render state (error fragment refs, scratch).
+        ctx: jsonsink.Ctx,
+
+        pub fn init(allocator: std.mem.Allocator, out: *Writer) Self {
+            return .{
+                .allocator = allocator,
+                .out = out,
+                .ctx = jsonsink.Ctx.init(allocator),
+            };
+        }
+
+        pub fn deinit(self: *Self) void {
+            self.ctx.deinit();
+        }
+
+        pub fn write(self: *Self, pool: *BufferPool, buf: []const u8) WriteError!usize {
+            defer _ = pool.put(@constCast(buf));
+
+            const payload = verifyFrame(buf) catch {
+                _ = self.dropped.fetchAdd(1, .monotonic);
+                return error.WriteFailed;
+            };
+
+            const out_buf = pool.get(jsonsink.initialCapacity(payload.len)) catch {
+                _ = self.dropped.fetchAdd(1, .monotonic);
+                return error.WriteFailed;
+            };
+            var out = jsonsink.Out{ .pool = pool, .buf = out_buf };
+            jsonsink.renderRecord(&out, &self.ctx, payload) catch {
+                out.release();
+                _ = self.dropped.fetchAdd(1, .monotonic);
+                return error.WriteFailed;
+            };
+            out.byte('\n') catch {
+                out.release();
+                _ = self.dropped.fetchAdd(1, .monotonic);
+                return error.WriteFailed;
+            };
+
+            const line = out.written();
+            var off: usize = 0;
+            while (off < line.len) {
+                const n = self.out.write(line[off..]) catch {
+                    out.release();
+                    return error.WriteFailed;
+                };
+                if (n == 0) {
+                    out.release();
+                    return error.WriteFailed;
+                }
+                off += n;
+            }
+            out.release();
+            return buf.len;
+        }
+    };
+}
+
+/// Verifies a log frame and returns its payload.
+///
+/// A valid frame is `0xFF [CRC32C×4 LE] 0xFE [uvarint len] payload`, with no
+/// trailing bytes and a CRC32C over the payload that matches its header. Any
+/// deviation returns an error so the caller can drop the record cleanly.
+pub fn verifyFrame(frame: []const u8) ![]const u8 {
+    if (frame.len < 7 or frame[0] != 0xFF or frame[5] != 0xFE) return error.BadFrame;
+
+    const len = try viewer.readUvarint(frame, 6);
+    const start = 6 + len.size;
+    const end = start + @as(usize, @intCast(len.val));
+    if (end != frame.len) return error.BadFrame;
+
+    const payload = frame[start..end];
+    const crc = std.mem.readInt(u32, frame[1..5], .little);
+    if (crc32c.hardwareCrc32C(payload) != crc) return error.CrcMismatch;
+    return payload;
 }
 
 /// Test-only downstream writer: appends every byte to an owned buffer.
@@ -834,6 +923,235 @@ test "pretty sink writes a rendered record to a file" {
     try expect(pool.put(again));
 }
 
+test "json sink renders a frame and releases both buffers" {
+    const pool_mod = @import("buffer_pool.zig");
+    const consts = @import("consts.zig");
+    const Pool = pool_mod.BufferPool(false);
+
+    const allocator = std.testing.allocator;
+    var pool = try Pool.init(allocator, 2, 2048);
+    defer pool.deinit();
+
+    var out = CaptureWriter{};
+    defer out.deinit();
+
+    var sink = JsonSink(CaptureWriter).init(allocator, &out);
+    defer sink.deinit();
+
+    var pb = viewer.PB{};
+    defer pb.deinit(allocator);
+    try pb.header(allocator, 0, @intFromEnum(consts.logLevel.info));
+    try pb.msg(allocator, "just a message");
+
+    const size = frameSize(pb.list.items.len);
+    const buf = try pool.get(size);
+    frameInto(buf[0..size], pb.list.items);
+    _ = try sink.write(&pool, buf[0..size]);
+
+    try expectEqualSlices(
+        u8,
+        "{\"time\":0,\"level\":\"I\",\"message\":\"just a message\"}\n",
+        out.written(),
+    );
+    try expectEqual(@as(u64, 0), sink.dropped.load(.monotonic));
+
+    // Both the input frame and the output buffer are back on the free list.
+    const a = try pool.get(size);
+    const b = try pool.get(size);
+    try expectEqual(buf.ptr, a.ptr);
+    try expect(pool.put(a));
+    try expect(pool.put(b));
+}
+
+test "json sink drops a corrupt frame and releases the buffer" {
+    const pool_mod = @import("buffer_pool.zig");
+    const consts = @import("consts.zig");
+    const Pool = pool_mod.BufferPool(false);
+
+    const allocator = std.testing.allocator;
+    var pool = try Pool.init(allocator, 2, 2048);
+    defer pool.deinit();
+
+    var out = CaptureWriter{};
+    defer out.deinit();
+
+    var sink = JsonSink(CaptureWriter).init(allocator, &out);
+    defer sink.deinit();
+
+    var pb = viewer.PB{};
+    defer pb.deinit(allocator);
+    try pb.header(allocator, 0, @intFromEnum(consts.logLevel.info));
+    try pb.msg(allocator, "just a message");
+
+    const size = frameSize(pb.list.items.len);
+    const buf = try pool.get(size);
+    frameInto(buf[0..size], pb.list.items);
+    buf[1] ^= 0xFF; // corrupt the CRC
+
+    try std.testing.expectError(error.WriteFailed, sink.write(&pool, buf[0..size]));
+    try expectEqual(@as(u64, 1), sink.dropped.load(.monotonic));
+    try expectEqual(@as(usize, 0), out.written().len);
+
+    const again = try pool.get(size);
+    try expectEqual(buf.ptr, again.ptr);
+    try expect(pool.put(again));
+}
+
+test "json sink drops malformed payloads without writing" {
+    const pool_mod = @import("buffer_pool.zig");
+    const Pool = pool_mod.BufferPool(false);
+    const consts = @import("consts.zig");
+
+    const allocator = std.testing.allocator;
+    var pool = try Pool.init(allocator, 4, 2048);
+    defer pool.deinit();
+
+    var out = CaptureWriter{};
+    defer out.deinit();
+
+    var sink = JsonSink(CaptureWriter).init(allocator, &out);
+    defer sink.deinit();
+
+    // Bad version.
+    {
+        var pb = viewer.PB{};
+        defer pb.deinit(allocator);
+        try pb.le(allocator, u16, 99);
+        try pb.le(allocator, u64, 0);
+        try pb.byte(allocator, 30);
+        try pb.byte(allocator, 0);
+        try pb.uvarint(allocator, 0);
+        try writeFramed(&pool, &sink, &pb);
+    }
+    // Truncated message: the length says more than the payload holds.
+    {
+        var pb = viewer.PB{};
+        defer pb.deinit(allocator);
+        try pb.le(allocator, u16, consts.version);
+        try pb.le(allocator, u64, 0);
+        try pb.byte(allocator, @intFromEnum(consts.logLevel.info));
+        try pb.byte(allocator, 0);
+        try pb.uvarint(allocator, 5);
+        try pb.raw(allocator, "ab");
+        try writeFramed(&pool, &sink, &pb);
+    }
+    // Unknown context kind byte.
+    {
+        var pb = viewer.PB{};
+        defer pb.deinit(allocator);
+        try pb.header(allocator, 0, @intFromEnum(consts.logLevel.info));
+        try pb.msg(allocator, "m");
+        try pb.byte(allocator, 200);
+        try writeFramed(&pool, &sink, &pb);
+    }
+    // Unknown predefined key code.
+    {
+        var pb = viewer.PB{};
+        defer pb.deinit(allocator);
+        try pb.header(allocator, 0, @intFromEnum(consts.logLevel.info));
+        try pb.msg(allocator, "m");
+        try pb.byte(allocator, 0);
+        try pb.uvarint(allocator, 9);
+        try writeFramed(&pool, &sink, &pb);
+    }
+
+    try expectEqual(@as(u64, 4), sink.dropped.load(.monotonic));
+    try expectEqual(@as(usize, 0), out.written().len);
+}
+
+test "json sink reuses state across records" {
+    const pool_mod = @import("buffer_pool.zig");
+    const consts = @import("consts.zig");
+    const Pool = pool_mod.BufferPool(false);
+
+    const allocator = std.testing.allocator;
+    var pool = try Pool.init(allocator, 2, 4096);
+    defer pool.deinit();
+
+    var out = CaptureWriter{};
+    defer out.deinit();
+
+    var sink = JsonSink(CaptureWriter).init(allocator, &out);
+    defer sink.deinit();
+
+    var pb = viewer.PB{};
+    defer pb.deinit(allocator);
+    try pb.header(allocator, 1, @intFromEnum(consts.logLevel.debug));
+    try pb.msg(allocator, "one");
+    try pb.key(allocator, .int64, "a");
+    try pb.le(allocator, u64, 1);
+    try writeFramed(&pool, &sink, &pb);
+
+    var pb2 = viewer.PB{};
+    defer pb2.deinit(allocator);
+    try pb2.header(allocator, 1_000_000, @intFromEnum(consts.logLevel.warning));
+    try pb2.msg(allocator, "two");
+    try writeFramed(&pool, &sink, &pb2);
+
+    try expectEqualSlices(
+        u8,
+        "{\"time\":1,\"level\":\"D\",\"message\":\"one\",\"a\":1}\n" ++
+            "{\"time\":1000000,\"level\":\"W\",\"message\":\"two\"}\n",
+        out.written(),
+    );
+}
+
+test "json sink writes a JSONL line to a file" {
+    const pool_mod = @import("buffer_pool.zig");
+    const consts = @import("consts.zig");
+    const Pool = pool_mod.BufferPool(false);
+    const Io = std.Io;
+
+    const allocator = std.testing.allocator;
+    var threaded: Io.Threaded = .init(allocator, .{});
+    defer threaded.deinit();
+    const io = threaded.io();
+
+    var pool = try Pool.init(allocator, 2, 2048);
+    defer pool.deinit();
+
+    const path = "test_json_writer_file.tmp";
+    const file = try Io.Dir.cwd().createFile(io, path, .{ .read = true });
+    defer {
+        file.close(io);
+        Io.Dir.cwd().deleteFile(io, path) catch {};
+    }
+
+    var file_buffer: [4096]u8 = undefined;
+    var file_writer: Io.File.Writer = .init(file, io, &file_buffer);
+
+    var sink = JsonSink(Io.Writer).init(allocator, &file_writer.interface);
+    defer sink.deinit();
+
+    var pb = viewer.PB{};
+    defer pb.deinit(allocator);
+    try pb.header(allocator, 0, @intFromEnum(consts.logLevel.info));
+    try pb.msg(allocator, "to a file");
+
+    const size = frameSize(pb.list.items.len);
+    const buf = try pool.get(size);
+    frameInto(buf[0..size], pb.list.items);
+    _ = try sink.write(&pool, buf[0..size]);
+    try file_writer.interface.flush();
+
+    var read_buf: [128]u8 = undefined;
+    const n = try file.readPositionalAll(io, &read_buf, 0);
+    try expectEqualSlices(
+        u8,
+        "{\"time\":0,\"level\":\"I\",\"message\":\"to a file\"}\n",
+        read_buf[0..n],
+    );
+}
+
+/// Frames `pb`'s payload and writes it through a JSON sink. A drop is not an
+/// error here: callers assert on `sink.dropped` and the captured output.
+fn writeFramed(pool: anytype, sink: anytype, pb: *const viewer.PB) !void {
+    const size = frameSize(pb.list.items.len);
+    const buf = try pool.get(size);
+    frameInto(buf[0..size], pb.list.items);
+    _ = sink.write(pool, buf[0..size]) catch {};
+}
+
 // For manual testing only. Writing to stdout corrupts the build runner's
 // `--listen=-` protocol stream, which hangs `zig build test`, so this only
 // runs when stdout is an interactive terminal.
@@ -849,34 +1167,10 @@ test "pretty sink manual try" {
     var pool = try Pool.init(allocator, 2, 2048);
     defer pool.deinit();
 
-    const memWriter = struct {
-        const Self = @This();
+    const Writer = FdWriter;
 
-        allocator: std.mem.Allocator,
-        buf: std.ArrayList(u8),
-
-        pub fn init(alloc: std.mem.Allocator) !Self {
-            return .{
-                .allocator = alloc,
-                .buf = try std.ArrayList(u8).initCapacity(alloc, 16384),
-            };
-        }
-
-        pub fn deinit(self: *Self) void {
-            self.buf.deinit(self.allocator);
-        }
-
-        pub fn write(self: *Self, buf: []const u8) std.Io.Writer.Error!usize {
-            self.buf.appendSlice(self.allocator, buf) catch {
-                return std.Io.Writer.Error.WriteFailed;
-            };
-            return buf.len;
-        }
-    };
-
-    const Sink = writer_mod.PrettySink(memWriter);
-    var writer = try memWriter.init(std.testing.allocator);
-    defer writer.deinit();
+    const Sink = writer_mod.PrettySink(Writer);
+    var writer = Writer.init(2);
 
     var sink = Sink.init(
         std.testing.allocator,
@@ -891,7 +1185,12 @@ test "pretty sink manual try" {
     log.debug("message", .{
         .name = "Name",
         .value = 12,
-        .group = .{ .id = 0xFE, .weight = 100, .array = [_]u16{ 1, 2, 3, 4, 5, 6, 7, 7 }, .children = [_]u16{ 8, 7, 6, 5, 4, 3, 2, 1, 0 } },
+        .group = .{
+            .id = 0xFE,
+            .weight = 100,
+            .array = [_]u16{ 1, 2, 3, 4, 5, 6, 7, 7 },
+            .children = [_]u16{ 8, 7, 6, 5, 4, 3, 2, 1, 0 },
+        },
     });
 
     log.info("info", .{
@@ -899,6 +1198,51 @@ test "pretty sink manual try" {
         .weight = 80,
         .age = 44,
     });
+}
 
-    std.debug.print("{s}", .{writer.buf.items});
+// For manual testing only. Writing to stdout corrupts the build runner's
+// `--listen=-` protocol stream, which hangs `zig build test`, so this only
+// runs when stdout is an interactive terminal.
+test "json sink manual try" {
+    const pool_mod = @import("buffer_pool.zig");
+    const logger = @import("logger.zig");
+    const writer_mod = @import("writer.zig");
+
+    const Pool = pool_mod.BufferPool(false);
+
+    const allocator = std.testing.allocator;
+
+    var pool = try Pool.init(allocator, 2, 2048);
+    defer pool.deinit();
+
+    const Writer = FdWriter;
+
+    const Sink = writer_mod.JsonSink(Writer);
+    var writer = Writer.init(2);
+
+    var sink = Sink.init(
+        std.testing.allocator,
+        &writer,
+    );
+    defer sink.deinit();
+
+    var log = logger.Logger(Pool, Sink).init(&pool, &sink);
+    defer log.deinit();
+
+    log.debug("message", .{
+        .name = "Name",
+        .value = 12,
+        .group = .{
+            .id = 0xFE,
+            .weight = 100,
+            .array = [_]u16{ 1, 2, 3, 4, 5, 6, 7, 7 },
+            .children = [_]u16{ 8, 7, 6, 5, 4, 3, 2, 1, 0 },
+        },
+    });
+
+    log.info("info", .{
+        .name = "Name",
+        .weight = 80,
+        .age = 44,
+    });
 }
