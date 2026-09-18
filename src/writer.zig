@@ -1152,97 +1152,100 @@ fn writeFramed(pool: anytype, sink: anytype, pb: *const viewer.PB) !void {
     _ = sink.write(pool, buf[0..size]) catch {};
 }
 
-// For manual testing only. Writing to stdout corrupts the build runner's
-// `--listen=-` protocol stream, which hangs `zig build test`, so this only
-// runs when stdout is an interactive terminal.
-test "pretty sink manual try" {
-    const pool_mod = @import("buffer_pool.zig");
-    const logger = @import("logger.zig");
-    const writer_mod = @import("writer.zig");
-
-    const Pool = pool_mod.BufferPool(false);
-
-    const allocator = std.testing.allocator;
-
-    var pool = try Pool.init(allocator, 2, 2048);
-    defer pool.deinit();
-
-    const Writer = FdWriter;
-
-    const Sink = writer_mod.PrettySink(Writer);
-    var writer = Writer.init(2);
-
-    var sink = Sink.init(
-        std.testing.allocator,
-        .light,
-        &writer,
-    );
-    defer sink.deinit();
-
-    var log = logger.Logger(Pool, Sink).init(&pool, &sink);
-    defer log.deinit();
-
-    log.debug("message", .{
-        .name = "Name",
-        .value = 12,
-        .group = .{
-            .id = 0xFE,
-            .weight = 100,
-            .array = [_]u16{ 1, 2, 3, 4, 5, 6, 7, 7 },
-            .children = [_]u16{ 8, 7, 6, 5, 4, 3, 2, 1, 0 },
-        },
-    });
-
-    log.info("info", .{
-        .name = "Name",
-        .weight = 80,
-        .age = 44,
-    });
-}
-
-// For manual testing only. Writing to stdout corrupts the build runner's
-// `--listen=-` protocol stream, which hangs `zig build test`, so this only
-// runs when stdout is an interactive terminal.
-test "json sink manual try" {
-    const pool_mod = @import("buffer_pool.zig");
-    const logger = @import("logger.zig");
-    const writer_mod = @import("writer.zig");
-
-    const Pool = pool_mod.BufferPool(false);
-
-    const allocator = std.testing.allocator;
-
-    var pool = try Pool.init(allocator, 2, 2048);
-    defer pool.deinit();
-
-    const Writer = FdWriter;
-
-    const Sink = writer_mod.JsonSink(Writer);
-    var writer = Writer.init(2);
-
-    var sink = Sink.init(
-        std.testing.allocator,
-        &writer,
-    );
-    defer sink.deinit();
-
-    var log = logger.Logger(Pool, Sink).init(&pool, &sink);
-    defer log.deinit();
-
-    log.debug("message", .{
-        .name = "Name",
-        .value = 12,
-        .group = .{
-            .id = 0xFE,
-            .weight = 100,
-            .array = [_]u16{ 1, 2, 3, 4, 5, 6, 7, 7 },
-            .children = [_]u16{ 8, 7, 6, 5, 4, 3, 2, 1, 0 },
-        },
-    });
-
-    log.info("info", .{
-        .name = "Name",
-        .weight = 80,
-        .age = 44,
-    });
-}
+//
+// // Uncomment further lines to check the output.
+//
+// // For manual testing only. Writing to stdout corrupts the build runner's
+// // `--listen=-` protocol stream, which hangs `zig build test`, so this only
+// // runs when stdout is an interactive terminal.
+// test "pretty sink manual try" {
+//     const pool_mod = @import("buffer_pool.zig");
+//     const logger = @import("logger.zig");
+//     const writer_mod = @import("writer.zig");
+//
+//     const Pool = pool_mod.BufferPool(false);
+//
+//     const allocator = std.testing.allocator;
+//
+//     var pool = try Pool.init(allocator, 2, 2048);
+//     defer pool.deinit();
+//
+//     const Writer = FdWriter;
+//
+//     const Sink = writer_mod.PrettySink(Writer);
+//     var writer = Writer.init(2);
+//
+//     var sink = Sink.init(
+//         std.testing.allocator,
+//         .light,
+//         &writer,
+//     );
+//     defer sink.deinit();
+//
+//     var log = logger.Logger(Pool, Sink).init(&pool, &sink);
+//     defer log.deinit();
+//
+//     log.debug("message", .{
+//         .name = "Name",
+//         .value = 12,
+//         .group = .{
+//             .id = 0xFE,
+//             .weight = 100,
+//             .array = [_]u16{ 1, 2, 3, 4, 5, 6, 7, 7 },
+//             .children = [_]u16{ 8, 7, 6, 5, 4, 3, 2, 1, 0 },
+//         },
+//     });
+//
+//     log.info("info", .{
+//         .name = "Name",
+//         .weight = 80,
+//         .age = 44,
+//     });
+// }
+//
+// // For manual testing only. Writing to stdout corrupts the build runner's
+// // `--listen=-` protocol stream, which hangs `zig build test`, so this only
+// // runs when stdout is an interactive terminal.
+// test "json sink manual try" {
+//     const pool_mod = @import("buffer_pool.zig");
+//     const logger = @import("logger.zig");
+//     const writer_mod = @import("writer.zig");
+//
+//     const Pool = pool_mod.BufferPool(false);
+//
+//     const allocator = std.testing.allocator;
+//
+//     var pool = try Pool.init(allocator, 2, 2048);
+//     defer pool.deinit();
+//
+//     const Writer = FdWriter;
+//
+//     const Sink = writer_mod.JsonSink(Writer);
+//     var writer = Writer.init(2);
+//
+//     var sink = Sink.init(
+//         std.testing.allocator,
+//         &writer,
+//     );
+//     defer sink.deinit();
+//
+//     var log = logger.Logger(Pool, Sink).init(&pool, &sink);
+//     defer log.deinit();
+//
+//     log.debug("message", .{
+//         .name = "Name",
+//         .value = 12,
+//         .group = .{
+//             .id = 0xFE,
+//             .weight = 100,
+//             .array = [_]u16{ 1, 2, 3, 4, 5, 6, 7, 7 },
+//             .children = [_]u16{ 8, 7, 6, 5, 4, 3, 2, 1, 0 },
+//         },
+//     });
+//
+//     log.info("info", .{
+//         .name = "Name",
+//         .weight = 80,
+//         .age = 44,
+//     });
+// }
