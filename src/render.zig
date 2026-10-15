@@ -445,7 +445,7 @@ pub const Renderer = struct {
                         .off = node.key_off,
                     });
                     st.error_depth += 1;
-                    self.pushPrefix(false);
+                    self.pushPrefix(node.is_last != 0);
                     continue;
                 },
                 .err_stage_wrap => {
@@ -458,7 +458,7 @@ pub const Renderer = struct {
                         .off = node.key_off,
                     });
                     try self.append(dst, "\n");
-                    self.pushPrefix(false);
+                    self.pushPrefix(node.is_last != 0);
                     st.error_depth += 1;
                     continue;
                 },
@@ -467,7 +467,7 @@ pub const Renderer = struct {
                     try self.append(dst, self.profile.err_stage);
                     try self.append(dst, "CTX");
                     try self.append(dst, "\n");
-                    self.pushPrefix(false);
+                    self.pushPrefix(node.is_last != 0);
                     st.error_depth += 1;
                     continue;
                 },
@@ -1639,8 +1639,8 @@ test "tree context: error bookkeeping" {
             "\u{2514}\u{2500} err-beer: \n" ++
             "   \u{251C}\u{2500} @context\n" ++
             "   \u{2502}  \u{2514}\u{2500} NEW: error\n" ++
-            "   \u{2502}  \u{2502}  \u{251C}\u{2500} @location: @location:331\n" ++
-            "   \u{2502}  \u{2502}  \u{2514}\u{2500} new-string: Hello World!\n" ++
+            "   \u{2502}     \u{251C}\u{2500} @location: @location:331\n" ++
+            "   \u{2502}     \u{2514}\u{2500} new-string: Hello World!\n" ++
             "   \u{2514}\u{2500} @text: error\n",
         out.items,
     );
@@ -1854,20 +1854,20 @@ test "tree golden: full error and location record" {
             "\u{2502}  \u{2502}  \u{2502}  \u{251C}\u{2500} @location: @location:332\n" ++
             "\u{2502}  \u{2502}  \u{2502}  \u{2514}\u{2500} wrap-int: 1\n" ++
             "\u{2502}  \u{2502}  \u{2514}\u{2500} CTX\n" ++
-            "\u{2502}  \u{2502}  \u{2502}  \u{251C}\u{2500} @location: @location:333\n" ++
-            "\u{2502}  \u{2502}  \u{2502}  \u{2514}\u{2500} just-pi: 3.141592653589793\n" ++
+            "\u{2502}  \u{2502}     \u{251C}\u{2500} @location: @location:333\n" ++
+            "\u{2502}  \u{2502}     \u{2514}\u{2500} just-pi: 3.141592653589793\n" ++
             "\u{2502}  \u{2514}\u{2500} @text: wrap: error\n" ++
             "\u{251C}\u{2500} err-foreign-root: \n" ++
             "\u{2502}  \u{251C}\u{2500} @context\n" ++
             "\u{2502}  \u{2502}  \u{2514}\u{2500} WRAP: wrap foreign\n" ++
-            "\u{2502}  \u{2502}  \u{2502}  \u{251C}\u{2500} @location: @location:335\n" ++
-            "\u{2502}  \u{2502}  \u{2502}  \u{2514}\u{2500} wrap-bool: true\n" ++
+            "\u{2502}  \u{2502}     \u{251C}\u{2500} @location: @location:335\n" ++
+            "\u{2502}  \u{2502}     \u{2514}\u{2500} wrap-bool: true\n" ++
             "\u{2502}  \u{2514}\u{2500} @text: wrap foreign: EOF: wrap: error\n" ++
             "\u{2514}\u{2500} err-intermixed: \n" ++
             "   \u{251C}\u{2500} @context\n" ++
             "   \u{2502}  \u{2514}\u{2500} NEW: error\n" ++
-            "   \u{2502}  \u{2502}  \u{251C}\u{2500} @location: @location:337\n" ++
-            "   \u{2502}  \u{2502}  \u{2514}\u{2500} new-time: 2026-04-22 20:48:19.371\n" ++
+            "   \u{2502}     \u{251C}\u{2500} @location: @location:337\n" ++
+            "   \u{2502}     \u{2514}\u{2500} new-time: 2026-04-22 20:48:19.371\n" ++
             "   \u{2514}\u{2500} @text: foreign wrap: error\n",
         out.items,
     );

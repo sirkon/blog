@@ -41,7 +41,17 @@ pub const RenderOptions = render.RenderOptions;
 
 pub const logger = @import("logger.zig");
 /// High-level logger over a `BufferPool` and a Sink.
+///
+///     var logger = blog.Logger(blog.BufferPool, blog.MemorySink).init(&pool, &sink);
+///     var diag = try logger.err_after(error.NotFound, .{ .name = file });
+///     diag = try diag.wrap("open config file", .{});
+///     logger.warn("cannot load config", .{ .err = diag });
 pub const Logger = logger.Logger;
+
+pub const errors = @import("error.zig");
+/// Rich diagnostics for the logger: a stack-driven, log-once error value with
+/// its stages encoded into the log payload.
+pub const Error = errors.Error;
 
 pub const viewer = @import("viewer.zig");
 /// Parses a log record payload into a header + node tree for rendering.
@@ -56,6 +66,7 @@ test {
     _ = @import("buffer_pool.zig");
     _ = @import("writer.zig");
     _ = @import("logger.zig");
+    _ = @import("error.zig");
     _ = @import("encoding.zig");
     _ = @import("decoding.zig");
     _ = @import("crc32c.zig");

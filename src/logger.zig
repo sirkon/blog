@@ -2,89 +2,10 @@ const std = @import("std");
 const consts = @import("consts.zig");
 const encoding = @import("encoding.zig");
 const crc32c = @import("crc32c.zig");
+const error_mod = @import("error.zig");
 
-/// A thin cursor over the record payload. It knows nothing about pools, IO,
-/// or log framing, and only appends serialized fields.
-const LogFrame = struct {
-    cur: [*]u8,
-
-    pub inline fn init(payload_ptr: [*]u8) LogFrame {
-        return .{ .cur = payload_ptr };
-    }
-
-    pub inline fn appendField(self: *LogFrame, comptime name: []const u8, value: anytype) void {
-        const T = @TypeOf(value);
-
-        const kind: consts.ValueKind = comptime block: {
-            break :block switch (@typeInfo(T)) {
-                .bool => .bool,
-                .int => |info| if (info.signedness == .signed) {
-                    break :block if (info.bits <= 8) .int8 else if (info.bits <= 16) .int16 else if (info.bits <= 32) .int32 else .int64;
-                } else {
-                    break :block if (info.bits <= 8) .uint8 else if (info.bits <= 16) .uint16 else if (info.bits <= 32) .uint32 else .uint64;
-                },
-                .comptime_int => consts.intKind(value),
-                .float => |info| if (info.bits == 32) .float32 else .float64,
-                .@"struct" => .nodeGroup,
-                .pointer => |ptrInfo| if (ptrInfo.size == .slice) {
-                    const Child = ptrInfo.child;
-                    break :block switch (@typeInfo(Child)) {
-                        .bool => .sliceBool,
-                        .int => |info| if (info.signedness == .signed) {
-                            break :block if (info.bits <= 8) .sliceInt8 else if (info.bits <= 16) .sliceInt16 else if (info.bits <= 32) .sliceInt32 else .sliceInt64;
-                        } else {
-                            break :block if (info.bits <= 8) .sliceUint8 else if (info.bits <= 16) .sliceUint16 else if (info.bits <= 32) .sliceUint32 else .sliceUint64;
-                        },
-                        .float => |info| if (info.bits == 32) .sliceFloat32 else .sliceFloat64,
-                        else => @compileError("Unsupported slice item: " ++ @typeName(Child)),
-                    };
-                } else if (ptrInfo.size == .one and (ptrInfo.child == u8 or switch (@typeInfo(ptrInfo.child)) {
-                    .array => |arr| arr.child == u8,
-                    else => false,
-                })) {
-                    break :block .string;
-                } else {
-                    @compileError("Unsupported pointer type: " ++ @typeName(T));
-                },
-                .array => |arrInfo| {
-                    const Child = arrInfo.child;
-                    break :block switch (@typeInfo(Child)) {
-                        .bool => .sliceBool,
-                        .int => |info| if (info.signedness == .signed) {
-                            break :block if (info.bits <= 8) .sliceInt8 else if (info.bits <= 16) .sliceInt16 else if (info.bits <= 32) .sliceInt32 else .sliceInt64;
-                        } else {
-                            break :block if (info.bits <= 8) .sliceUint8 else if (info.bits <= 16) .sliceUint16 else if (info.bits <= 32) .sliceUint32 else .sliceUint64;
-                        },
-                        .float => |info| if (info.bits == 32) .sliceFloat32 else .sliceFloat64,
-                        else => @compileError("Unsupported array item: " ++ @typeName(Child)),
-                    };
-                },
-                else => @compileError("Unsupported record field type: " ++ @typeName(T)),
-            };
-        };
-
-        self.cur[0] = @intFromEnum(kind);
-        self.cur += 1;
-
-        self.cur = encoding.appendVarint(self.cur, name.len);
-        @memcpy(self.cur[0..name.len], name);
-        self.cur += name.len;
-
-        switch (@typeInfo(T)) {
-            .@"struct" => {
-                const sub_info = @typeInfo(T);
-                inline for (sub_info.@"struct".fields) |f| {
-                    self.appendField(f.name, @field(value, f.name));
-                }
-                self.cur[0] = @intFromEnum(consts.ValueKind.nodeGroupEnd);
-                self.cur += 1;
-            },
-            else => {
-                self.cur = encoding.append(self.cur, value);
-            },
-        }
-    }
-};
+/// A thin cursor over the record payload, shared with the diagnostics encoder.
+const LogFrame = encoding.Frame;
 
 /// Width in bytes of a log header for a payload of `payload_len` bytes:
 /// `0xFF + CRC32C(4) + 0xFE + uvarint(payload_len)`.
@@ -132,12 +53,24 @@ pub fn Logger(comptime Pool: type, comptime Sink: type) type {
         prefix_alloc: ?[]u8 = null,
         /// Payload bytes contributed by `With` (a subview of `prefix_alloc`).
         prefix: []const u8 = &.{},
+        /// Stack-driven rich diagnostics started by this logger and not yet
+        /// logged. `err_after`/`err_new` hand out pointers into this array.
+        slots: [error_mod.maxLiveDiagnostics]Error = undefined,
+
+        /// The diagnostic type this logger hands out: never heap-created,
+        /// owned by the logger until it is logged.
+        pub const Error = error_mod.Diag(Pool);
 
         pub fn init(pool: *Pool, sink: *Sink) Self {
-            return .{ .pool = pool, .sink = sink };
+            return .{
+                .pool = pool,
+                .sink = sink,
+                .slots = error_mod.emptySlots(Pool, pool),
+            };
         }
 
         pub fn deinit(self: *Self) void {
+            self.releaseDiagnostics();
             if (self.prefix_alloc) |buf| {
                 self.prefix_alloc = null;
                 self.prefix = &.{};
@@ -145,14 +78,93 @@ pub fn Logger(comptime Pool: type, comptime Sink: type) type {
             }
         }
 
+        // ------------------------------------------------------- diagnostics
+
+        /// Starts a rich diagnostic from a Zig error value. Log it exactly once
+        /// with `self` as `.{ .key = diag }`; any other use is a terminal bug.
+        pub fn err_after(self: *Self, err_value: anyerror, ctx: anytype) std.mem.Allocator.Error!*Error {
+            return self.startDiagnostic(err_value, @errorName(err_value), null, ctx);
+        }
+
+        /// Starts a spec-less diagnostic: a pure invariant violation without a
+        /// certain code.
+        pub fn err_new(self: *Self, msg: []const u8, ctx: anytype) std.mem.Allocator.Error!*Error {
+            return self.startDiagnostic(null, msg, null, ctx);
+        }
+
+        /// Like `err_after`, with the call site attached.
+        pub fn err_after_loc(
+            self: *Self,
+            err_value: anyerror,
+            loc: std.builtin.SourceLocation,
+            ctx: anytype,
+        ) std.mem.Allocator.Error!*Error {
+            return self.startDiagnostic(err_value, @errorName(err_value), loc, ctx);
+        }
+
+        /// Alias of `err_after_loc`.
+        pub fn err_after_log(
+            self: *Self,
+            err_value: anyerror,
+            loc: std.builtin.SourceLocation,
+            ctx: anytype,
+        ) std.mem.Allocator.Error!*Error {
+            return self.startDiagnostic(err_value, @errorName(err_value), loc, ctx);
+        }
+
+        /// Like `err_new`, with the call site attached.
+        pub fn err_new_loc(
+            self: *Self,
+            loc: std.builtin.SourceLocation,
+            msg: []const u8,
+            ctx: anytype,
+        ) std.mem.Allocator.Error!*Error {
+            return self.startDiagnostic(null, msg, loc, ctx);
+        }
+
+        /// Alias of `err_new_loc`.
+        pub fn err_new_log(
+            self: *Self,
+            loc: std.builtin.SourceLocation,
+            msg: []const u8,
+            ctx: anytype,
+        ) std.mem.Allocator.Error!*Error {
+            return self.startDiagnostic(null, msg, loc, ctx);
+        }
+
+        fn startDiagnostic(
+            self: *Self,
+            spec: ?anyerror,
+            msg: []const u8,
+            loc: ?std.builtin.SourceLocation,
+            ctx: anytype,
+        ) std.mem.Allocator.Error!*Error {
+            for (&self.slots) |*slot| {
+                if (!slot.isConsumed()) continue;
+                return Error.start(slot, self.pool, spec, msg, loc, ctx);
+            }
+            @panic("too many live blog.Error diagnostics; log them before starting new ones");
+        }
+
+        /// Returns every diagnostic this logger still owns to the pool. A
+        /// diagnostic that was started but never logged would otherwise leak
+        /// its frame and trip the pool's own leak assertion.
+        fn releaseDiagnostics(self: *Self) void {
+            for (&self.slots) |*slot| slot.release();
+        }
+
         /// Returns a child logger whose records carry `attrs` as a prefix.
         /// One frame is pinned for the child's lifetime and returned by
         /// `deinit`.
         pub fn With(self: *Self, attrs: anytype) Self {
+            // A diagnostic captured in the prefix would be copied once per
+            // child record, so it cannot be owned by the child (nor logged).
+            comptime std.debug.assert(!hasDiagnostics(@TypeOf(attrs)));
+
             const attrs_size = encoding.getStructEncodedSize(attrs);
             const buf = self.pool.get(attrs_size) catch {
                 self.drop();
-                return .{ .pool = self.pool, .sink = self.sink };
+                return Self.init(self.pool, self.sink);
             };
 
             var frame = LogFrame.init(buf.ptr);
@@ -166,6 +178,7 @@ pub fn Logger(comptime Pool: type, comptime Sink: type) type {
                 .sink = self.sink,
                 .prefix_alloc = buf,
                 .prefix = buf,
+                .slots = error_mod.emptySlots(Pool, self.pool),
             };
         }
 
@@ -240,16 +253,48 @@ pub fn Logger(comptime Pool: type, comptime Sink: type) type {
 
             writeHeader(buf[0..total], payload_len);
 
+            // The bytes are copied into the record, so the diagnostics that
+            // contributed them are consumed (and their frames released) before
+            // the sink is entered, whether it succeeds or not.
+            consumeDiagnostics(self, attrs);
+
             _ = self.sink.write(self.pool, buf[0..total]) catch {
                 self.drop();
                 return;
             };
         }
 
+        /// Consumes every `*Error` attribute of a record exactly once, walking
+        /// nested context groups too. Not `inline`: the recursion must be
+        /// monomorphized per attribute type.
+        fn consumeDiagnostics(self: *Self, attrs: anytype) void {
+            const attrs_info = @typeInfo(@TypeOf(attrs));
+            inline for (attrs_info.@"struct".fields) |field| {
+                const T = field.type;
+                if (comptime encoding.isErrorPtr(T)) {
+                    @field(attrs, field.name).consume();
+                } else if (comptime @typeInfo(T) == .@"struct") {
+                    self.consumeDiagnostics(@field(attrs, field.name));
+                }
+            }
+        }
+
         inline fn drop(self: *Self) void {
             _ = self.sink.dropped.fetchAdd(1, .monotonic);
         }
     };
+}
+
+/// True when `T` holds a `*Error` directly or inside a nested context group.
+/// Type-driven on purpose: the check runs before any value exists.
+fn hasDiagnostics(comptime T: type) bool {
+    const info = @typeInfo(T);
+    if (info != .@"struct") return false;
+    inline for (info.@"struct".fields) |field| {
+        if (comptime encoding.isErrorPtr(field.type)) return true;
+        if (comptime hasDiagnostics(field.type)) return true;
+    }
+    return false;
 }
 
 /// Writes the log header in front of an already-rendered payload.

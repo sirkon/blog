@@ -36,6 +36,24 @@ defer child.deinit();
 child.warn("child record", .{ .x = @as(i16, -3) });
 ```
 
+## Rich diagnostics.
+
+`Error` carries structured context across a call chain the same way Go's
+`blog.Error` does. `logger.err_after`/`err_new` start it, `wrap`/`with` grow it,
+and handing the pointer to a logger attribute logs it:
+
+```zig
+var diag = try logger.err_after(err, .{ .name = file_name });
+diag = try diag.wrap("open config file", .{ .attempt = @as(u8, 2) });
+logger.warn("cannot start", .{ .err = diag });
+```
+
+A diagnostic is never allocator-created and is terminal once logged: appending
+to it or logging it again resets its payload to a deliberately invalid value, so
+the next use faults instead of touching a recycled frame.
+`diag.spec()` returns the original Zig error value and
+`diag.string(allocator)` renders the stages as `"outer: inner"`.
+
 `FileSink(Writer)` writes frames to any type exposing
 `fn write(self: *Writer, []const u8) E!usize`; `FdWriter` adapts a raw POSIX
 fd, `SyncWriter(Writer)` serializes concurrent writes, `PrettySink(Writer)`

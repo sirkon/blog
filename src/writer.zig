@@ -809,20 +809,20 @@ test "pretty sink renders an error/location record end to end" {
             "\u{2502}  \u{2502}  \u{2502}  \u{251C}\u{2500} @location: @location:332\n" ++
             "\u{2502}  \u{2502}  \u{2502}  \u{2514}\u{2500} wrap-int: 1\n" ++
             "\u{2502}  \u{2502}  \u{2514}\u{2500} CTX\n" ++
-            "\u{2502}  \u{2502}  \u{2502}  \u{251C}\u{2500} @location: @location:333\n" ++
-            "\u{2502}  \u{2502}  \u{2502}  \u{2514}\u{2500} just-pi: 3.141592653589793\n" ++
+            "\u{2502}  \u{2502}     \u{251C}\u{2500} @location: @location:333\n" ++
+            "\u{2502}  \u{2502}     \u{2514}\u{2500} just-pi: 3.141592653589793\n" ++
             "\u{2502}  \u{2514}\u{2500} @text: wrap: error\n" ++
             "\u{251C}\u{2500} err-foreign-root: \n" ++
             "\u{2502}  \u{251C}\u{2500} @context\n" ++
             "\u{2502}  \u{2502}  \u{2514}\u{2500} WRAP: wrap foreign\n" ++
-            "\u{2502}  \u{2502}  \u{2502}  \u{251C}\u{2500} @location: @location:335\n" ++
-            "\u{2502}  \u{2502}  \u{2502}  \u{2514}\u{2500} wrap-bool: true\n" ++
+            "\u{2502}  \u{2502}     \u{251C}\u{2500} @location: @location:335\n" ++
+            "\u{2502}  \u{2502}     \u{2514}\u{2500} wrap-bool: true\n" ++
             "\u{2502}  \u{2514}\u{2500} @text: wrap foreign: EOF: wrap: error\n" ++
             "\u{2514}\u{2500} err-intermixed: \n" ++
             "   \u{251C}\u{2500} @context\n" ++
             "   \u{2502}  \u{2514}\u{2500} NEW: error\n" ++
-            "   \u{2502}  \u{2502}  \u{251C}\u{2500} @location: @location:337\n" ++
-            "   \u{2502}  \u{2502}  \u{2514}\u{2500} new-time: 2026-04-22 20:48:19.371\n" ++
+            "   \u{2502}     \u{251C}\u{2500} @location: @location:337\n" ++
+            "   \u{2502}     \u{2514}\u{2500} new-time: 2026-04-22 20:48:19.371\n" ++
             "   \u{2514}\u{2500} @text: foreign wrap: error\n",
         out.written(),
     );

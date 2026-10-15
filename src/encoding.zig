@@ -64,6 +64,14 @@ pub fn getStructEncodedSize(struct_val: anytype) usize {
                 totalSize += 1;
             },
             .pointer => |ptrInfo| {
+                // A `*blog.Error` value contributes its own payload, which
+                // already ends with a group end, plus the group end that
+                // closes the `nodeError` node.
+                if (comptime isErrorPtr(FieldType)) {
+                    totalSize += errorValueSize(val.payloadSize());
+                    continue;
+                }
+
                 // Check if this type can be treated as a string/slice of bytes
                 const is_string = comptime (ptrInfo.child == u8 or switch (@typeInfo(ptrInfo.child)) {
                     .array => |arr| arr.child == u8,
@@ -296,6 +304,124 @@ pub inline fn varintSize(value: u64) usize {
     const bits = 64 - @clz(value | 1);
     return ((bits - 1) / 7) + 1;
 }
+
+/// True when `T` is a `*blog.Error` for any pool instantiation. Delegates to
+/// the diagnostic module, which identifies its own type; the import cycle is
+/// harmless because only comptime functions reference each other.
+pub fn isErrorPtr(comptime T: type) bool {
+    const info = @typeInfo(T);
+    if (info != .pointer) return false;
+    if (info.pointer.size != .one) return false;
+    return @import("error.zig").isDiag(info.pointer.child);
+}
+
+/// Bytes an embedded error payload adds to the `nodeError` node holding it:
+/// the payload itself (already closed by its own group end) plus the group end
+/// that closes the `nodeError` node.
+pub fn errorValueSize(payload_len: usize) usize {
+    return payload_len + 1;
+}
+
+/// A thin cursor over a byte buffer that appends serialized fields. It knows
+/// nothing about pools, IO or log framing. Shared by the logger (record
+/// attrs, `With` prefixes) and by rich diagnostics (`error.zig`).
+pub const Frame = struct {
+    cur: [*]u8,
+
+    pub inline fn init(payload_ptr: [*]u8) Frame {
+        return .{ .cur = payload_ptr };
+    }
+
+    pub inline fn appendField(self: *Frame, comptime name: []const u8, value: anytype) void {
+        const T = @TypeOf(value);
+
+        const kind: consts.ValueKind = comptime block: {
+            break :block switch (@typeInfo(T)) {
+                .bool => .bool,
+                .int => |info| if (info.signedness == .signed) {
+                    break :block if (info.bits <= 8) .int8 else if (info.bits <= 16) .int16 else if (info.bits <= 32) .int32 else .int64;
+                } else {
+                    break :block if (info.bits <= 8) .uint8 else if (info.bits <= 16) .uint16 else if (info.bits <= 32) .uint32 else .uint64;
+                },
+                .comptime_int => consts.intKind(value),
+                .float => |info| if (info.bits == 32) .float32 else .float64,
+                .@"struct" => .nodeGroup,
+                .pointer => |ptrInfo| if (ptrInfo.size == .slice) {
+                    const Child = ptrInfo.child;
+                    break :block switch (@typeInfo(Child)) {
+                        .bool => .sliceBool,
+                        .int => |info| if (info.signedness == .signed) {
+                            break :block if (info.bits <= 8) .sliceInt8 else if (info.bits <= 16) .sliceInt16 else if (info.bits <= 32) .sliceInt32 else .sliceInt64;
+                        } else {
+                            break :block if (info.bits <= 8) .sliceUint8 else if (info.bits <= 16) .sliceUint16 else if (info.bits <= 32) .sliceUint32 else .sliceUint64;
+                        },
+                        .float => |info| if (info.bits == 32) .sliceFloat32 else .sliceFloat64,
+                        else => @compileError("Unsupported slice item: " ++ @typeName(Child)),
+                    };
+                } else if (isErrorPtr(T)) {
+                    break :block .nodeError;
+                } else if (ptrInfo.size == .one and (ptrInfo.child == u8 or switch (@typeInfo(ptrInfo.child)) {
+                    .array => |arr| arr.child == u8,
+                    else => false,
+                })) {
+                    break :block .string;
+                } else {
+                    @compileError("Unsupported pointer type: " ++ @typeName(T));
+                },
+                .array => |arrInfo| {
+                    const Child = arrInfo.child;
+                    break :block switch (@typeInfo(Child)) {
+                        .bool => .sliceBool,
+                        .int => |info| if (info.signedness == .signed) {
+                            break :block if (info.bits <= 8) .sliceInt8 else if (info.bits <= 16) .sliceInt16 else if (info.bits <= 32) .sliceInt32 else .sliceInt64;
+                        } else {
+                            break :block if (info.bits <= 8) .sliceUint8 else if (info.bits <= 16) .sliceUint16 else if (info.bits <= 32) .sliceUint32 else .sliceUint64;
+                        },
+                        .float => |info| if (info.bits == 32) .sliceFloat32 else .sliceFloat64,
+                        else => @compileError("Unsupported array item: " ++ @typeName(Child)),
+                    };
+                },
+                else => @compileError("Unsupported record field type: " ++ @typeName(T)),
+            };
+        };
+
+        self.cur[0] = @intFromEnum(kind);
+        self.cur += 1;
+
+        self.cur = appendVarint(self.cur, name.len);
+        @memcpy(self.cur[0..name.len], name);
+        self.cur += name.len;
+
+        switch (@typeInfo(T)) {
+            .@"struct" => {
+                const sub_info = @typeInfo(T);
+                inline for (sub_info.@"struct".fields) |f| {
+                    self.appendField(f.name, @field(value, f.name));
+                }
+                self.cur[0] = @intFromEnum(consts.ValueKind.nodeGroupEnd);
+                self.cur += 1;
+            },
+            .pointer => {
+                if (comptime isErrorPtr(T)) {
+                    // The diagnostic payload closes itself with a group end;
+                    // one more closes the `nodeError` node. A consumed
+                    // diagnostic has the dead payload, so reading it here is
+                    // the intended segfault.
+                    const payload = value.payloadSlice();
+                    @memcpy(self.cur[0..payload.len], payload);
+                    self.cur += payload.len;
+                    self.cur[0] = @intFromEnum(consts.ValueKind.nodeGroupEnd);
+                    self.cur += 1;
+                } else {
+                    self.cur = append(self.cur, value);
+                }
+            },
+            else => {
+                self.cur = append(self.cur, value);
+            },
+        }
+    }
+};
 
 const expect = std.testing.expect;
 
