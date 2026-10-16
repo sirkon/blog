@@ -22,13 +22,16 @@ zig fetch --save=blog <url-or-path-to-this-package>
 const blog = @import("blog");
 
 // The concrete pool every sink and Logger is typed against.
-var pool = try blog.BufferPool.init(allocator, 64, 16 * 1024);
+var pool: blog.BufferPool = undefined;
+try pool.init(allocator, 64, 16 * 1024);
 defer pool.deinit();
 
-var sink = blog.MemorySink.init(allocator);
+var sink: blog.MemorySink = undefined;
+sink.init(allocator);
 defer sink.deinit();
 
-var logger = blog.Logger(blog.BufferPool, blog.MemorySink).init(&pool, &sink);
+var logger: blog.Logger(blog.BufferPool, blog.MemorySink) = undefined;
+logger.init(&pool, &sink);
 logger.info("hello", .{ .n = @as(u32, 7) });
 
 var child = logger.With(.{ .job = "sync" });

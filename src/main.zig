@@ -9,10 +9,14 @@ const Io = std.Io;
 const blog = @import("blog");
 
 pub fn main(init: std.process.Init) !void {
-    var pool = try blog.BufferPool.init(init.arena.allocator(), 4096, 4096);
-    var writer = blog.FdWriter.init(1);
-    var sink = blog.PrettySink(blog.FdWriter).init(init.arena.allocator(), blog.ColorProfile.dark, &writer);
-    var logger = blog.Logger(blog.BufferPool, blog.PrettySink(blog.FdWriter)).init(&pool, &sink);
+    var pool: blog.BufferPool = undefined;
+    try pool.init(init.arena.allocator(), 4096, 4096);
+    var writer: blog.FdWriter = undefined;
+    writer.init(1);
+    var sink: blog.PrettySink(blog.FdWriter) = undefined;
+    sink.init(init.arena.allocator(), blog.ColorProfile.dark, &writer);
+    var logger: blog.Logger(blog.BufferPool, blog.PrettySink(blog.FdWriter)) = undefined;
+    logger.init(&pool, &sink);
     var diag = try logger.err_new("new error", .{ .key11 = 1, .key21 = "Hello!" });
     diag = try diag.wrap("wrap", .{ .key21 = 2, .key22 = "World" });
     diag = try diag.with(.{ .key31 = 3 });
@@ -37,9 +41,12 @@ test "test output" {
     var aw: std.Io.Writer.Allocating = .init(std.testing.allocator);
     defer aw.deinit();
 
-    var pool = try blog.BufferPool.init(std.testing.allocator, 4096, 4096);
-    var sink = blog.PrettySink(std.Io.Writer).init(std.testing.allocator, blog.ColorProfile.plain, &aw.writer);
-    var logger = blog.Logger(blog.BufferPool, blog.PrettySink(std.Io.Writer)).init(&pool, &sink);
+    var pool: blog.BufferPool = undefined;
+    try pool.init(std.testing.allocator, 4096, 4096);
+    var sink: blog.PrettySink(std.Io.Writer) = undefined;
+    sink.init(std.testing.allocator, blog.ColorProfile.plain, &aw.writer);
+    var logger: blog.Logger(blog.BufferPool, blog.PrettySink(std.Io.Writer)) = undefined;
+    logger.init(&pool, &sink);
     defer logger.deinit();
     var diag = try logger.err_new("new error", .{ .key11 = 1, .key21 = "Hello!" });
     diag = try diag.wrap("wrap", .{ .key21 = 2, .key22 = "World" });

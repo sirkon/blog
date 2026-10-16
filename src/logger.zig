@@ -41,7 +41,8 @@ inline fn toUnixNs(ts: std.os.linux.timespec) u64 {
 /// lifecycle directly. Both are comptime parameters: no vtables, no
 /// indirect calls on the hot path.
 ///
-///     var logger = Logger(Pool, Sink).init(&pool, &sink);
+///     var logger: Logger(Pool, Sink) = undefined;
+///     logger.init(&pool, &sink);
 ///     logger.warn("something happened", .{ .key = value });
 pub fn Logger(comptime Pool: type, comptime Sink: type) type {
     return struct {
@@ -61,8 +62,8 @@ pub fn Logger(comptime Pool: type, comptime Sink: type) type {
         /// owned by the logger until it is logged.
         pub const Error = error_mod.Diag(Pool);
 
-        pub fn init(pool: *Pool, sink: *Sink) Self {
-            return .{
+        pub fn init(self: *Self, pool: *Pool, sink: *Sink) void {
+            self.* = .{
                 .pool = pool,
                 .sink = sink,
                 .slots = error_mod.emptySlots(Pool, pool),
@@ -164,10 +165,15 @@ pub fn Logger(comptime Pool: type, comptime Sink: type) type {
             const attrs_size = encoding.getStructEncodedSize(attrs);
             const buf = self.pool.get(attrs_size) catch {
                 self.drop();
-                return Self.init(self.pool, self.sink);
+                return .{
+                    .pool = self.pool,
+                    .sink = self.sink,
+                    .slots = error_mod.emptySlots(Pool, self.pool),
+                };
             };
 
-            var frame = LogFrame.init(buf.ptr);
+            var frame: LogFrame = undefined;
+            frame.init(buf.ptr);
             const attrs_info = @typeInfo(@TypeOf(attrs));
             inline for (attrs_info.@"struct".fields) |field| {
                 frame.appendField(field.name, @field(attrs, field.name));
@@ -317,13 +323,16 @@ test "golden log frame bytes (timestamp pinned) and decode round-trip" {
     const writer = @import("writer.zig");
 
     const allocator = std.testing.allocator;
-    var pool = try buffer_pool.BufferPool(false).init(allocator, 8, 2048);
+    var pool: buffer_pool.BufferPool(false) = undefined;
+    try pool.init(allocator, 8, 2048);
     defer pool.deinit();
 
-    var sink = writer.MemorySink.init(allocator);
+    var sink: writer.MemorySink = undefined;
+    sink.init(allocator);
     defer sink.deinit();
 
-    var logger = Logger(@TypeOf(pool), @TypeOf(sink)).init(&pool, &sink);
+    var logger: Logger(@TypeOf(pool), @TypeOf(sink)) = undefined;
+    logger.init(&pool, &sink);
     logger.writeRecord(.warning, "hi", .{ .n = @as(u32, 7) }, 0x0102030405060708);
 
     const golden = [_]u8{
@@ -357,13 +366,16 @@ test "with prefix is encoded, then returned to the pool on deinit" {
     const writer = @import("writer.zig");
 
     const allocator = std.testing.allocator;
-    var pool = try buffer_pool.BufferPool(false).init(allocator, 4, 512);
+    var pool: buffer_pool.BufferPool(false) = undefined;
+    try pool.init(allocator, 4, 512);
     defer pool.deinit();
 
-    var sink = writer.MemorySink.init(allocator);
+    var sink: writer.MemorySink = undefined;
+    sink.init(allocator);
     defer sink.deinit();
 
-    var root = Logger(@TypeOf(pool), @TypeOf(sink)).init(&pool, &sink);
+    var root: Logger(@TypeOf(pool), @TypeOf(sink)) = undefined;
+    root.init(&pool, &sink);
     var child = root.With(.{ .job = "sync" });
     defer child.deinit();
 
@@ -418,11 +430,13 @@ test "drop accounting when the sink fails" {
     };
 
     const allocator = std.testing.allocator;
-    var pool = try buffer_pool.BufferPool(false).init(allocator, 4, 512);
+    var pool: buffer_pool.BufferPool(false) = undefined;
+    try pool.init(allocator, 4, 512);
     defer pool.deinit();
 
     var sink = FailingSink{};
-    var logger = Logger(@TypeOf(pool), FailingSink).init(&pool, &sink);
+    var logger: Logger(@TypeOf(pool), FailingSink) = undefined;
+    logger.init(&pool, &sink);
 
     logger.warn("one", .{});
     logger.err("two", .{});
@@ -440,13 +454,16 @@ test "drop accounting when the pool is out of memory" {
     const allocator = failing.allocator();
 
     // Pool init performs 3 allocations; every later heap fallback fails.
-    var pool = try buffer_pool.BufferPool(false).init(allocator, 1, 512);
+    var pool: buffer_pool.BufferPool(false) = undefined;
+    try pool.init(allocator, 1, 512);
     defer pool.deinit();
 
-    var sink = writer.MemorySink.init(std.testing.allocator);
+    var sink: writer.MemorySink = undefined;
+    sink.init(std.testing.allocator);
     defer sink.deinit();
 
-    var logger = Logger(@TypeOf(pool), @TypeOf(sink)).init(&pool, &sink);
+    var logger: Logger(@TypeOf(pool), @TypeOf(sink)) = undefined;
+    logger.init(&pool, &sink);
 
     // Longer than the frame, so `get` falls back to the heap, which fails.
     const big = "x" ** 4096;

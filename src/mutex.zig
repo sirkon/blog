@@ -19,16 +19,13 @@ pub const Mutex = struct {
     /// Initializes the mutex with default (process-private) attributes.
     ///
     /// Must be paired with `deinit` on the same instance. Pthreads requires the
-    /// same memory to be used for init, lock, unlock and destroy, so keep the
-    /// returned value where it is.
-    pub fn init() Mutex {
-        var self = Mutex{
-            // Properly zero the memory for the C struct
-            .raw = std.mem.zeroes(c.pthread_mutex_t),
-        };
+    /// same memory to be used for init, lock, unlock and destroy, so the
+    /// instance must keep a stable address for its whole lifetime.
+    pub fn init(self: *Mutex) void {
+        // Properly zero the memory for the C struct
+        self.raw = std.mem.zeroes(c.pthread_mutex_t);
         // Initialize the mutex with default attributes (null)
         _ = pthread_mutex_init(&self.raw, null);
-        return self;
     }
 
     /// Destroys the mutex and releases any resources libc attached to it.

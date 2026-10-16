@@ -152,8 +152,8 @@ pub const Renderer = struct {
     tree_prefix: u64 = 0,
     tree_depth: isize = 0,
 
-    pub fn init(allocator: std.mem.Allocator, profile: ColorProfile) Self {
-        return .{ .allocator = allocator, .profile = profile };
+    pub fn init(self: *Self, allocator: std.mem.Allocator, profile: ColorProfile) void {
+        self.* = .{ .allocator = allocator, .profile = profile };
     }
 
     pub fn deinit(self: *Self) void {
@@ -1231,7 +1231,8 @@ fn renderInto(
     var rec = viewer.ParsedRecord{};
     defer rec.deinit(a);
     try viewer.parseRecord(a, payload, &rec);
-    var r = Renderer.init(a, .plain);
+    var r: Renderer = undefined;
+    r.init(a, .plain);
     r.options = options;
     defer r.deinit();
     try r.render(out, payload, &rec);
@@ -1267,7 +1268,8 @@ test "tree prefix bitmap" {
         for (s.stack, 0..) |b, i| {
             if (b) bitmap |= @as(u64, 1) << @intCast(i);
         }
-        var r = Renderer.init(a, .plain);
+        var r: Renderer = undefined;
+        r.init(a, .plain);
         defer r.deinit();
         r.tree_prefix = bitmap;
         r.tree_depth = @intCast(s.stack.len);
@@ -1509,7 +1511,8 @@ test "tree context: bytes are base64" {
 
 test "json escaping matches the Rust dialect" {
     const a = testing.allocator;
-    var r = Renderer.init(a, .plain);
+    var r: Renderer = undefined;
+    r.init(a, .plain);
     defer r.deinit();
     var out: std.ArrayList(u8) = .empty;
     defer out.deinit(a);
@@ -1527,7 +1530,8 @@ test "json escape delegates to the jsonescape module" {
         "long " ** 200,
     };
 
-    var r = Renderer.init(a, .plain);
+    var r: Renderer = undefined;
+    r.init(a, .plain);
     defer r.deinit();
 
     for (samples) |s| {
@@ -1560,7 +1564,8 @@ test "compact json keys are colored like tree keys" {
     defer rec.deinit(a);
     try viewer.parseRecord(a, pb.list.items, &rec);
 
-    var r = Renderer.init(a, .dark);
+    var r: Renderer = undefined;
+    r.init(a, .dark);
     defer r.deinit();
     var out: std.ArrayList(u8) = .empty;
     defer out.deinit(a);
@@ -1595,7 +1600,8 @@ test "compact json error stage keys are colored like tree keys" {
     defer rec.deinit(a);
     try viewer.parseRecord(a, pb.list.items, &rec);
 
-    var r = Renderer.init(a, .dark);
+    var r: Renderer = undefined;
+    r.init(a, .dark);
     defer r.deinit();
     r.options.max_tree_depth = 0; // force the compact-JSON context
     var out: std.ArrayList(u8) = .empty;

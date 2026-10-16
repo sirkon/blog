@@ -9,8 +9,12 @@ pub const writer = @import("writer.zig");
 /// type every `Logger`, `MemorySink`, `FileSink`, `SyncWriter` and
 /// `PrettySink` is typed against. Use it directly:
 ///
-///     var pool = try blog.BufferPool.init(allocator, 64, 16 * 1024);
-///     var logger = blog.Logger(blog.BufferPool, blog.MemorySink).init(&pool, &sink);
+///     var pool: blog.BufferPool = undefined;
+///     try pool.init(allocator, 64, 16 * 1024);
+///     var sink: blog.MemorySink = undefined;
+///     sink.init(allocator);
+///     var logger: blog.Logger(blog.BufferPool, blog.MemorySink) = undefined;
+///     logger.init(&pool, &sink);
 pub const BufferPool = writer.BufferPool;
 /// Comptime pool factory for callers that need the thread-safe variant or a
 /// custom frame policy. `BufferPoolFactory(false)` is the concrete
@@ -42,7 +46,8 @@ pub const RenderOptions = render.RenderOptions;
 pub const logger = @import("logger.zig");
 /// High-level logger over a `BufferPool` and a Sink.
 ///
-///     var logger = blog.Logger(blog.BufferPool, blog.MemorySink).init(&pool, &sink);
+///     var logger: blog.Logger(blog.BufferPool, blog.MemorySink) = undefined;
+///     logger.init(&pool, &sink);
 ///     var diag = try logger.err_after(error.NotFound, .{ .name = file });
 ///     diag = try diag.wrap("open config file", .{});
 ///     logger.warn("cannot load config", .{ .err = diag });

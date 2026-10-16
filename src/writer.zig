@@ -93,8 +93,8 @@ pub const MemorySink = struct {
     /// Records the logger had to drop before they reached this sink.
     dropped: std.atomic.Value(u64) = .init(0),
 
-    pub fn init(allocator: std.mem.Allocator) Self {
-        return .{ .allocator = allocator };
+    pub fn init(self: *Self, allocator: std.mem.Allocator) void {
+        self.* = .{ .allocator = allocator };
     }
 
     pub fn deinit(self: *Self) void {
@@ -126,8 +126,8 @@ pub const FdWriter = struct {
 
     fd: std.posix.fd_t,
 
-    pub fn init(fd: std.posix.fd_t) Self {
-        return .{ .fd = fd };
+    pub fn init(self: *Self, fd: std.posix.fd_t) void {
+        self.* = .{ .fd = fd };
     }
 
     pub fn write(self: *Self, bytes: []const u8) WriteError!usize {
@@ -176,8 +176,8 @@ pub fn FileSink(comptime Writer: type) type {
         /// Records the logger had to drop before they reached this sink.
         dropped: std.atomic.Value(u64) = .init(0),
 
-        pub fn init(writer: *Writer) Self {
-            return .{ .writer = writer };
+        pub fn init(self: *Self, writer: *Writer) void {
+            self.* = .{ .writer = writer };
         }
 
         pub fn write(self: *Self, pool: *BufferPool, buf: []const u8) WriteError!usize {
@@ -217,11 +217,9 @@ pub fn SyncWriter(comptime Writer: type) type {
         /// Downstream writer; supplied by the caller. Not owned.
         writer: *Writer,
 
-        pub fn init(writer: *Writer) Self {
-            return .{
-                .mutex = mutex.Mutex.init(),
-                .writer = writer,
-            };
+        pub fn init(self: *Self, writer: *Writer) void {
+            self.writer = writer;
+            self.mutex.init();
         }
 
         pub fn deinit(self: *Self) void {
@@ -266,16 +264,18 @@ pub fn PrettySink(comptime Writer: type) type {
         renderer: render.Renderer,
 
         pub fn init(
+            self: *Self,
             allocator: std.mem.Allocator,
             profile: render.ColorProfile,
             out: *Writer,
-        ) Self {
-            return .{
+        ) void {
+            self.* = .{
                 .allocator = allocator,
                 .out = out,
                 .profile = profile,
-                .renderer = render.Renderer.init(allocator, profile),
+                .renderer = undefined,
             };
+            self.renderer.init(allocator, profile);
         }
 
         pub fn deinit(self: *Self) void {
@@ -336,12 +336,13 @@ pub fn JsonSink(comptime Writer: type) type {
         /// Reusable per-record render state (error fragment refs, scratch).
         ctx: jsonsink.Ctx,
 
-        pub fn init(allocator: std.mem.Allocator, out: *Writer) Self {
-            return .{
+        pub fn init(self: *Self, allocator: std.mem.Allocator, out: *Writer) void {
+            self.* = .{
                 .allocator = allocator,
                 .out = out,
-                .ctx = jsonsink.Ctx.init(allocator),
+                .ctx = undefined,
             };
+            self.ctx.init(allocator);
         }
 
         pub fn deinit(self: *Self) void {
@@ -437,10 +438,12 @@ test "memory sink captures and releases the buffer" {
     const Pool = pool_mod.BufferPool(false);
 
     const allocator = std.testing.allocator;
-    var pool = try Pool.init(allocator, 2, 512);
+    var pool: Pool = undefined;
+    try pool.init(allocator, 2, 512);
     defer pool.deinit();
 
-    var sink = MemorySink.init(allocator);
+    var sink: MemorySink = undefined;
+    sink.init(allocator);
     defer sink.deinit();
 
     const a = try pool.get(16);
@@ -470,11 +473,13 @@ test "file sink reports a failing writer and still releases the buffer" {
     };
 
     const allocator = std.testing.allocator;
-    var pool = try Pool.init(allocator, 2, 512);
+    var pool: Pool = undefined;
+    try pool.init(allocator, 2, 512);
     defer pool.deinit();
 
     var failing = FailingWriter{};
-    var sink = FileSink(FailingWriter).init(&failing);
+    var sink: FileSink(FailingWriter) = undefined;
+    sink.init(&failing);
 
     const buf = try pool.get(8);
     @memcpy(buf, "12345678");
@@ -498,7 +503,8 @@ test "file sink writes frames to disk" {
     defer threaded.deinit();
     const io = threaded.io();
 
-    var pool = try Pool.init(allocator, 2, 512);
+    var pool: Pool = undefined;
+    try pool.init(allocator, 2, 512);
     defer pool.deinit();
 
     const path = "test_writer_frames.tmp";
@@ -511,9 +517,11 @@ test "file sink writes frames to disk" {
     var file_buffer: [64]u8 = undefined;
     var file_writer: Io.File.Writer = .init(file, io, &file_buffer);
 
-    var synced = SyncWriter(Io.Writer).init(&file_writer.interface);
+    var synced: SyncWriter(Io.Writer) = undefined;
+    synced.init(&file_writer.interface);
     defer synced.deinit();
-    var sink = FileSink(SyncWriter(Io.Writer)).init(&synced);
+    var sink: FileSink(SyncWriter(Io.Writer)) = undefined;
+    sink.init(&synced);
 
     const buf = try pool.get(4);
     @memcpy(buf, "abcd");
@@ -537,7 +545,8 @@ test "sync writer forwards and serializes writes" {
     };
 
     var inner = CountingWriter{};
-    var synced = SyncWriter(CountingWriter).init(&inner);
+    var synced: SyncWriter(CountingWriter) = undefined;
+    synced.init(&inner);
     defer synced.deinit();
 
     try expectEqual(@as(usize, 3), try synced.write("abc"));
@@ -548,10 +557,12 @@ test "sync writer forwards and serializes writes" {
     const pool_mod = @import("buffer_pool.zig");
     const Pool = pool_mod.BufferPool(false);
     const allocator = std.testing.allocator;
-    var pool = try Pool.init(allocator, 2, 512);
+    var pool: Pool = undefined;
+    try pool.init(allocator, 2, 512);
     defer pool.deinit();
 
-    var sink = FileSink(SyncWriter(CountingWriter)).init(&synced);
+    var sink: FileSink(SyncWriter(CountingWriter)) = undefined;
+    sink.init(&synced);
     const buf = try pool.get(4);
     @memcpy(buf, "wxyz");
     _ = try sink.write(&pool, buf);
@@ -577,7 +588,8 @@ test "fd writer writes to a file descriptor" {
         Io.Dir.cwd().deleteFile(io, path) catch {};
     }
 
-    var fd_writer = FdWriter.init(file.handle);
+    var fd_writer: FdWriter = undefined;
+    fd_writer.init(file.handle);
     try expectEqual(@as(usize, 5), try fd_writer.write("hello"));
     // A zero-length write is a no-op that still succeeds.
     try expectEqual(@as(usize, 0), try fd_writer.write(""));
@@ -598,7 +610,8 @@ test "fd writer composes as a downstream sink writer" {
     defer threaded.deinit();
     const io = threaded.io();
 
-    var pool = try Pool.init(allocator, 2, 512);
+    var pool: Pool = undefined;
+    try pool.init(allocator, 2, 512);
     defer pool.deinit();
 
     const path = "test_fd_writer_sink.tmp";
@@ -608,8 +621,10 @@ test "fd writer composes as a downstream sink writer" {
         Io.Dir.cwd().deleteFile(io, path) catch {};
     }
 
-    var fd_writer = FdWriter.init(file.handle);
-    var sink = FileSink(FdWriter).init(&fd_writer);
+    var fd_writer: FdWriter = undefined;
+    fd_writer.init(file.handle);
+    var sink: FileSink(FdWriter) = undefined;
+    sink.init(&fd_writer);
 
     const buf = try pool.get(4);
     @memcpy(buf, "abcd");
@@ -653,13 +668,15 @@ test "pretty sink renders a frame and releases the buffer" {
     const Pool = pool_mod.BufferPool(false);
 
     const allocator = std.testing.allocator;
-    var pool = try Pool.init(allocator, 2, 2048);
+    var pool: Pool = undefined;
+    try pool.init(allocator, 2, 2048);
     defer pool.deinit();
 
     var out = CaptureWriter{};
     defer out.deinit();
 
-    var sink = PrettySink(CaptureWriter).init(allocator, .plain, &out);
+    var sink: PrettySink(CaptureWriter) = undefined;
+    sink.init(allocator, .plain, &out);
     defer sink.deinit();
 
     var pb = viewer.PB{};
@@ -689,13 +706,15 @@ test "pretty sink drops a corrupt frame and releases the buffer" {
     const Pool = pool_mod.BufferPool(false);
 
     const allocator = std.testing.allocator;
-    var pool = try Pool.init(allocator, 2, 2048);
+    var pool: Pool = undefined;
+    try pool.init(allocator, 2, 2048);
     defer pool.deinit();
 
     var out = CaptureWriter{};
     defer out.deinit();
 
-    var sink = PrettySink(CaptureWriter).init(allocator, .plain, &out);
+    var sink: PrettySink(CaptureWriter) = undefined;
+    sink.init(allocator, .plain, &out);
     defer sink.deinit();
 
     var pb = viewer.PB{};
@@ -723,13 +742,15 @@ test "pretty sink reuses parser and renderer across records" {
     const Pool = pool_mod.BufferPool(false);
 
     const allocator = std.testing.allocator;
-    var pool = try Pool.init(allocator, 2, 2048);
+    var pool: Pool = undefined;
+    try pool.init(allocator, 2, 2048);
     defer pool.deinit();
 
     var out = CaptureWriter{};
     defer out.deinit();
 
-    var sink = PrettySink(CaptureWriter).init(allocator, .plain, &out);
+    var sink: PrettySink(CaptureWriter) = undefined;
+    sink.init(allocator, .plain, &out);
     defer sink.deinit();
 
     var pb = viewer.PB{};
@@ -777,13 +798,15 @@ test "pretty sink renders an error/location record end to end" {
     const Pool = pool_mod.BufferPool(false);
 
     const allocator = std.testing.allocator;
-    var pool = try Pool.init(allocator, 2, 4096);
+    var pool: Pool = undefined;
+    try pool.init(allocator, 2, 4096);
     defer pool.deinit();
 
     var out = CaptureWriter{};
     defer out.deinit();
 
-    var sink = PrettySink(CaptureWriter).init(allocator, .plain, &out);
+    var sink: PrettySink(CaptureWriter) = undefined;
+    sink.init(allocator, .plain, &out);
     defer sink.deinit();
     sink.options = .{ .tz_offset_seconds = render.ERRORS_TZ };
 
@@ -837,13 +860,15 @@ test "pretty sink renders a panic frame with the gzipped stacktrace" {
     const Pool = pool_mod.BufferPool(false);
 
     const allocator = std.testing.allocator;
-    var pool = try Pool.init(allocator, 2, 4096);
+    var pool: Pool = undefined;
+    try pool.init(allocator, 2, 4096);
     defer pool.deinit();
 
     var out = CaptureWriter{};
     defer out.deinit();
 
-    var sink = PrettySink(CaptureWriter).init(allocator, .plain, &out);
+    var sink: PrettySink(CaptureWriter) = undefined;
+    sink.init(allocator, .plain, &out);
     defer sink.deinit();
     sink.options = .{ .tz_offset_seconds = render.ERRORS_TZ };
 
@@ -883,7 +908,8 @@ test "pretty sink writes a rendered record to a file" {
     defer threaded.deinit();
     const io = threaded.io();
 
-    var pool = try Pool.init(allocator, 2, 2048);
+    var pool: Pool = undefined;
+    try pool.init(allocator, 2, 2048);
     defer pool.deinit();
 
     const path = "test_tree_writer_file.tmp";
@@ -896,7 +922,8 @@ test "pretty sink writes a rendered record to a file" {
     var file_buffer: [4096]u8 = undefined;
     var file_writer: Io.File.Writer = .init(file, io, &file_buffer);
 
-    var sink = PrettySink(Io.Writer).init(allocator, .plain, &file_writer.interface);
+    var sink: PrettySink(Io.Writer) = undefined;
+    sink.init(allocator, .plain, &file_writer.interface);
     defer sink.deinit();
 
     var pb = viewer.PB{};
@@ -929,13 +956,15 @@ test "json sink renders a frame and releases both buffers" {
     const Pool = pool_mod.BufferPool(false);
 
     const allocator = std.testing.allocator;
-    var pool = try Pool.init(allocator, 2, 2048);
+    var pool: Pool = undefined;
+    try pool.init(allocator, 2, 2048);
     defer pool.deinit();
 
     var out = CaptureWriter{};
     defer out.deinit();
 
-    var sink = JsonSink(CaptureWriter).init(allocator, &out);
+    var sink: JsonSink(CaptureWriter) = undefined;
+    sink.init(allocator, &out);
     defer sink.deinit();
 
     var pb = viewer.PB{};
@@ -969,13 +998,15 @@ test "json sink drops a corrupt frame and releases the buffer" {
     const Pool = pool_mod.BufferPool(false);
 
     const allocator = std.testing.allocator;
-    var pool = try Pool.init(allocator, 2, 2048);
+    var pool: Pool = undefined;
+    try pool.init(allocator, 2, 2048);
     defer pool.deinit();
 
     var out = CaptureWriter{};
     defer out.deinit();
 
-    var sink = JsonSink(CaptureWriter).init(allocator, &out);
+    var sink: JsonSink(CaptureWriter) = undefined;
+    sink.init(allocator, &out);
     defer sink.deinit();
 
     var pb = viewer.PB{};
@@ -1003,13 +1034,15 @@ test "json sink drops malformed payloads without writing" {
     const consts = @import("consts.zig");
 
     const allocator = std.testing.allocator;
-    var pool = try Pool.init(allocator, 4, 2048);
+    var pool: Pool = undefined;
+    try pool.init(allocator, 4, 2048);
     defer pool.deinit();
 
     var out = CaptureWriter{};
     defer out.deinit();
 
-    var sink = JsonSink(CaptureWriter).init(allocator, &out);
+    var sink: JsonSink(CaptureWriter) = undefined;
+    sink.init(allocator, &out);
     defer sink.deinit();
 
     // Bad version.
@@ -1065,13 +1098,15 @@ test "json sink reuses state across records" {
     const Pool = pool_mod.BufferPool(false);
 
     const allocator = std.testing.allocator;
-    var pool = try Pool.init(allocator, 2, 4096);
+    var pool: Pool = undefined;
+    try pool.init(allocator, 2, 4096);
     defer pool.deinit();
 
     var out = CaptureWriter{};
     defer out.deinit();
 
-    var sink = JsonSink(CaptureWriter).init(allocator, &out);
+    var sink: JsonSink(CaptureWriter) = undefined;
+    sink.init(allocator, &out);
     defer sink.deinit();
 
     var pb = viewer.PB{};
@@ -1107,7 +1142,8 @@ test "json sink writes a JSONL line to a file" {
     defer threaded.deinit();
     const io = threaded.io();
 
-    var pool = try Pool.init(allocator, 2, 2048);
+    var pool: Pool = undefined;
+    try pool.init(allocator, 2, 2048);
     defer pool.deinit();
 
     const path = "test_json_writer_file.tmp";
@@ -1120,7 +1156,8 @@ test "json sink writes a JSONL line to a file" {
     var file_buffer: [4096]u8 = undefined;
     var file_writer: Io.File.Writer = .init(file, io, &file_buffer);
 
-    var sink = JsonSink(Io.Writer).init(allocator, &file_writer.interface);
+    var sink: JsonSink(Io.Writer) = undefined;
+    sink.init(allocator, &file_writer.interface);
     defer sink.deinit();
 
     var pb = viewer.PB{};
@@ -1167,22 +1204,26 @@ fn writeFramed(pool: anytype, sink: anytype, pb: *const viewer.PB) !void {
 //
 //     const allocator = std.testing.allocator;
 //
-//     var pool = try Pool.init(allocator, 2, 2048);
+//     var pool: Pool = undefined;
+//     try pool.init(allocator, 2, 2048);
 //     defer pool.deinit();
 //
 //     const Writer = FdWriter;
 //
 //     const Sink = writer_mod.PrettySink(Writer);
-//     var writer = Writer.init(2);
+//     var writer: Writer = undefined;
+//     writer.init(2);
 //
-//     var sink = Sink.init(
+//     var sink: Sink = undefined;
+//     sink.init(
 //         std.testing.allocator,
 //         .light,
 //         &writer,
 //     );
 //     defer sink.deinit();
 //
-//     var log = logger.Logger(Pool, Sink).init(&pool, &sink);
+//     var log: logger.Logger(Pool, Sink) = undefined;
+//     log.init(&pool, &sink);
 //     defer log.deinit();
 //
 //     log.debug("message", .{
@@ -1215,21 +1256,25 @@ fn writeFramed(pool: anytype, sink: anytype, pb: *const viewer.PB) !void {
 //
 //     const allocator = std.testing.allocator;
 //
-//     var pool = try Pool.init(allocator, 2, 2048);
+//     var pool: Pool = undefined;
+//     try pool.init(allocator, 2, 2048);
 //     defer pool.deinit();
 //
 //     const Writer = FdWriter;
 //
 //     const Sink = writer_mod.JsonSink(Writer);
-//     var writer = Writer.init(2);
+//     var writer: Writer = undefined;
+//     writer.init(2);
 //
-//     var sink = Sink.init(
+//     var sink: Sink = undefined;
+//     sink.init(
 //         std.testing.allocator,
 //         &writer,
 //     );
 //     defer sink.deinit();
 //
-//     var log = logger.Logger(Pool, Sink).init(&pool, &sink);
+//     var log: logger.Logger(Pool, Sink) = undefined;
+//     log.init(&pool, &sink);
 //     defer log.deinit();
 //
 //     log.debug("message", .{

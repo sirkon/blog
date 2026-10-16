@@ -295,8 +295,8 @@ pub const Ctx = struct {
     err_stack: std.ArrayList(ErrRef) = .empty,
     scratch: std.ArrayList(u8) = .empty,
 
-    pub fn init(allocator: std.mem.Allocator) Ctx {
-        return .{ .allocator = allocator };
+    pub fn init(self: *Ctx, allocator: std.mem.Allocator) void {
+        self.* = .{ .allocator = allocator };
     }
 
     pub fn deinit(self: *Ctx) void {
@@ -669,7 +669,8 @@ test "in cursor drops truncated reads" {
 test "out cursor writes scalars within budget" {
     const Pool = BufferPool;
     const allocator = std.testing.allocator;
-    var pool = try Pool.init(allocator, 2, 512);
+    var pool: Pool = undefined;
+    try pool.init(allocator, 2, 512);
     defer pool.deinit();
 
     var out = Out{ .pool = &pool, .buf = try pool.get(128) };
@@ -730,7 +731,8 @@ test "duration worst case fits its budget" {
 test "escape expansion forces growth from the initial reserve" {
     const Pool = BufferPool;
     const allocator = std.testing.allocator;
-    var pool = try Pool.init(allocator, 2, 512);
+    var pool: Pool = undefined;
+    try pool.init(allocator, 2, 512);
     defer pool.deinit();
 
     const payload_len: usize = 1024;
@@ -765,7 +767,8 @@ test "initial capacity floors tiny records" {
 test "growth releases the old buffer to the pool" {
     const Pool = BufferPool;
     const allocator = std.testing.allocator;
-    var pool = try Pool.init(allocator, 2, 512);
+    var pool: Pool = undefined;
+    try pool.init(allocator, 2, 512);
     defer pool.deinit();
 
     // Both frames: one is the output, the other becomes the grown buffer.
@@ -785,7 +788,8 @@ test "growth releases the old buffer to the pool" {
 test "out cursor reuses a pool frame without growing when it fits" {
     const Pool = BufferPool;
     const allocator = std.testing.allocator;
-    var pool = try Pool.init(allocator, 2, 512);
+    var pool: Pool = undefined;
+    try pool.init(allocator, 2, 512);
     defer pool.deinit();
 
     var out = Out{ .pool = &pool, .buf = try pool.get(512) };
@@ -806,7 +810,8 @@ fn renderTest(pool: *BufferPool, payload: []const u8) ![]const u8 {
     const out = try pool.get(initialCapacity(payload.len));
     var cursor = Out{ .pool = pool, .buf = out };
     errdefer cursor.release();
-    var ctx = Ctx.init(std.testing.allocator);
+    var ctx: Ctx = undefined;
+    ctx.init(std.testing.allocator);
     defer ctx.deinit();
     try renderRecord(&cursor, &ctx, payload);
     return cursor.written();
@@ -814,7 +819,8 @@ fn renderTest(pool: *BufferPool, payload: []const u8) ![]const u8 {
 
 test "header golden: message only" {
     const a = std.testing.allocator;
-    var pool = try BufferPool.init(a, 4, 512);
+    var pool: BufferPool = undefined;
+    try pool.init(a, 4, 512);
     defer pool.deinit();
 
     var pb = viewer.PB{};
@@ -833,7 +839,8 @@ test "header golden: message only" {
 
 test "header golden: location and context" {
     const a = std.testing.allocator;
-    var pool = try BufferPool.init(a, 4, 512);
+    var pool: BufferPool = undefined;
+    try pool.init(a, 4, 512);
     defer pool.deinit();
 
     var pb = viewer.PB{};
@@ -859,7 +866,8 @@ test "header golden: location and context" {
 
 test "header golden: every level letter and the unknown fallback" {
     const a = std.testing.allocator;
-    var pool = try BufferPool.init(a, 4, 512);
+    var pool: BufferPool = undefined;
+    try pool.init(a, 4, 512);
     defer pool.deinit();
 
     const cases = [_]struct { level: u8, want: []const u8, field: []const u8 }{
@@ -891,7 +899,8 @@ test "header golden: every level letter and the unknown fallback" {
 
 test "header golden: empty context has no trailing comma" {
     const a = std.testing.allocator;
-    var pool = try BufferPool.init(a, 4, 512);
+    var pool: BufferPool = undefined;
+    try pool.init(a, 4, 512);
     defer pool.deinit();
 
     var pb = viewer.PB{};
@@ -906,7 +915,8 @@ test "header golden: empty context has no trailing comma" {
 
 test "scalar goldens: every integer width and the extremes" {
     const a = std.testing.allocator;
-    var pool = try BufferPool.init(a, 4, 512);
+    var pool: BufferPool = undefined;
+    try pool.init(a, 4, 512);
     defer pool.deinit();
 
     var pb = viewer.PB{};
@@ -949,7 +959,8 @@ test "scalar goldens: every integer width and the extremes" {
 
 test "scalar goldens: bool, floats, time and duration" {
     const a = std.testing.allocator;
-    var pool = try BufferPool.init(a, 4, 512);
+    var pool: BufferPool = undefined;
+    try pool.init(a, 4, 512);
     defer pool.deinit();
 
     var pb = viewer.PB{};
@@ -987,7 +998,8 @@ test "scalar goldens: bool, floats, time and duration" {
 
 test "slices: compact, empty, strings, floats and base64" {
     const a = std.testing.allocator;
-    var pool = try BufferPool.init(a, 4, 4096);
+    var pool: BufferPool = undefined;
+    try pool.init(a, 4, 4096);
     defer pool.deinit();
 
     var pb = viewer.PB{};
@@ -1038,7 +1050,8 @@ test "slices: compact, empty, strings, floats and base64" {
 
 test "escaping: control chars, quotes and backslashes round-trip" {
     const a = std.testing.allocator;
-    var pool = try BufferPool.init(a, 4, 512);
+    var pool: BufferPool = undefined;
+    try pool.init(a, 4, 512);
     defer pool.deinit();
 
     var pb = viewer.PB{};
@@ -1058,7 +1071,8 @@ test "escaping: control chars, quotes and backslashes round-trip" {
 
 test "predefined key code 0 renders INVALID while other codes drop" {
     const a = std.testing.allocator;
-    var pool = try BufferPool.init(a, 4, 512);
+    var pool: BufferPool = undefined;
+    try pool.init(a, 4, 512);
     defer pool.deinit();
 
     var pb = viewer.PB{};
@@ -1087,7 +1101,8 @@ test "predefined key code 0 renders INVALID while other codes drop" {
     try bad.uvarint(a, 9); // unknown predefined code
     try bad.le(a, u64, 7);
 
-    var bc = Ctx.init(a);
+    var bc: Ctx = undefined;
+    bc.init(a);
     defer bc.deinit();
     const buf = try pool.get(initialCapacity(bad.list.items.len));
     var cursor = Out{ .pool = &pool, .buf = buf };
@@ -1097,7 +1112,8 @@ test "predefined key code 0 renders INVALID while other codes drop" {
 
 test "unknown version and unknown kind drop cleanly" {
     const a = std.testing.allocator;
-    var pool = try BufferPool.init(a, 4, 512);
+    var pool: BufferPool = undefined;
+    try pool.init(a, 4, 512);
     defer pool.deinit();
 
     var pb = viewer.PB{};
@@ -1108,7 +1124,8 @@ test "unknown version and unknown kind drop cleanly" {
     try pb.byte(a, 0);
     try pb.uvarint(a, 0);
 
-    var c1 = Ctx.init(a);
+    var c1: Ctx = undefined;
+    c1.init(a);
     defer c1.deinit();
     const buf = try pool.get(initialCapacity(pb.list.items.len));
     var cursor = Out{ .pool = &pool, .buf = buf };
@@ -1121,7 +1138,8 @@ test "unknown version and unknown kind drop cleanly" {
     try pb2.msg(a, "m");
     try pb2.byte(a, 200); // not a valid ValueKind
 
-    var c2 = Ctx.init(a);
+    var c2: Ctx = undefined;
+    c2.init(a);
     defer c2.deinit();
     const buf2 = try pool.get(initialCapacity(pb2.list.items.len));
     var cursor2 = Out{ .pool = &pool, .buf = buf2 };
@@ -1131,7 +1149,8 @@ test "unknown version and unknown kind drop cleanly" {
 
 test "groups: inline, nested and empty" {
     const a = std.testing.allocator;
-    var pool = try BufferPool.init(a, 4, 512);
+    var pool: BufferPool = undefined;
+    try pool.init(a, 4, 512);
     defer pool.deinit();
 
     var pb = viewer.PB{};
@@ -1163,7 +1182,8 @@ test "groups: inline, nested and empty" {
 
 test "errors golden: inline error form" {
     const a = std.testing.allocator;
-    var pool = try BufferPool.init(a, 4, 1024);
+    var pool: BufferPool = undefined;
+    try pool.init(a, 4, 1024);
     defer pool.deinit();
 
     var pb = viewer.PB{};
@@ -1191,7 +1211,8 @@ test "errors golden: inline error form" {
 
 test "errors golden: full fixture line" {
     const a = std.testing.allocator;
-    var pool = try BufferPool.init(a, 4, 8192);
+    var pool: BufferPool = undefined;
+    try pool.init(a, 4, 8192);
     defer pool.deinit();
 
     var pb = viewer.PB{};
@@ -1218,7 +1239,8 @@ test "errors golden: full fixture line" {
 
 test "errors: embed text wins over fragment join" {
     const a = std.testing.allocator;
-    var pool = try BufferPool.init(a, 4, 512);
+    var pool: BufferPool = undefined;
+    try pool.init(a, 4, 512);
     defer pool.deinit();
 
     var pb = viewer.PB{};
@@ -1248,7 +1270,8 @@ test "errors: embed text wins over fragment join" {
 
 test "panic golden: raw gunzipped stacktrace field" {
     const a = std.testing.allocator;
-    var pool = try BufferPool.init(a, 4, 8192);
+    var pool: BufferPool = undefined;
+    try pool.init(a, 4, 8192);
     defer pool.deinit();
 
     var pb = viewer.PB{};
@@ -1267,7 +1290,8 @@ test "panic golden: raw gunzipped stacktrace field" {
 
 test "panic: gzip decode failure appends the error name" {
     const a = std.testing.allocator;
-    var pool = try BufferPool.init(a, 4, 512);
+    var pool: BufferPool = undefined;
+    try pool.init(a, 4, 512);
     defer pool.deinit();
 
     var pb = viewer.PB{};

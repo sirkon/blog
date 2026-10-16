@@ -34,10 +34,11 @@ pub fn BufferPool(comptime threadsafe: bool) type {
         mutex: if (threadsafe) mutex.Mutex else void,
 
         pub fn init(
+            self: *Self,
             allocator: std.mem.Allocator,
             size: u32,
             frameSize: u32,
-        ) !Self {
+        ) !void {
             if (size == 0 or (size & (size - 1)) != 0) return error.InvalidConfig;
             if (frameSize < 512 or (frameSize & (frameSize - 1)) != 0) return error.InvalidConfig;
 
@@ -54,7 +55,7 @@ pub fn BufferPool(comptime threadsafe: bool) type {
                 next[i] = if (i + 1 < size) @intCast(i + 1) else -1;
             }
 
-            return .{
+            self.* = .{
                 .size = size,
                 .frameSize = frameSize,
                 .backing = backing,
@@ -62,8 +63,9 @@ pub fn BufferPool(comptime threadsafe: bool) type {
                 .first = 0,
                 .next = next,
                 .allocator = allocator,
-                .mutex = if (threadsafe) mutex.Mutex.init() else {},
+                .mutex = if (threadsafe) undefined else {},
             };
+            if (threadsafe) self.mutex.init();
         }
 
         pub fn deinit(self: *Self) void {
@@ -131,7 +133,8 @@ const expectEqual = std.testing.expectEqual;
 
 test "lifo reuse and frame identity" {
     const allocator = std.testing.allocator;
-    var pool = try BufferPool(false).init(allocator, 4, 512);
+    var pool: BufferPool(false) = undefined;
+    try pool.init(allocator, 4, 512);
     defer pool.deinit();
 
     const a = try pool.get(10);
@@ -150,17 +153,20 @@ test "lifo reuse and frame identity" {
 
 test "config validation" {
     const allocator = std.testing.allocator;
-    try std.testing.expectError(error.InvalidConfig, BufferPool(false).init(allocator, 3, 512));
-    try std.testing.expectError(error.InvalidConfig, BufferPool(false).init(allocator, 4, 256));
-    try std.testing.expectError(error.InvalidConfig, BufferPool(false).init(allocator, 0, 512));
+    var invalid: BufferPool(false) = undefined;
+    try std.testing.expectError(error.InvalidConfig, invalid.init(allocator, 3, 512));
+    try std.testing.expectError(error.InvalidConfig, invalid.init(allocator, 4, 256));
+    try std.testing.expectError(error.InvalidConfig, invalid.init(allocator, 0, 512));
 
-    var pool = try BufferPool(false).init(allocator, 1, 512);
+    var pool: BufferPool(false) = undefined;
+    try pool.init(allocator, 1, 512);
     defer pool.deinit();
 }
 
 test "heap fallback when request exceeds the frame" {
     const allocator = std.testing.allocator;
-    var pool = try BufferPool(false).init(allocator, 2, 512);
+    var pool: BufferPool(false) = undefined;
+    try pool.init(allocator, 2, 512);
     defer pool.deinit();
 
     const big = try pool.get(2048);
@@ -169,7 +175,8 @@ test "heap fallback when request exceeds the frame" {
 
 test "heap fallback on exhaustion" {
     const allocator = std.testing.allocator;
-    var pool = try BufferPool(false).init(allocator, 2, 512);
+    var pool: BufferPool(false) = undefined;
+    try pool.init(allocator, 2, 512);
     defer pool.deinit();
 
     const a = try pool.get(64);
@@ -184,7 +191,8 @@ test "heap fallback on exhaustion" {
 
 test "put accepts an interior pointer" {
     const allocator = std.testing.allocator;
-    var pool = try BufferPool(false).init(allocator, 2, 512);
+    var pool: BufferPool(false) = undefined;
+    try pool.init(allocator, 2, 512);
     defer pool.deinit();
 
     const a = try pool.get(64);
@@ -198,7 +206,8 @@ test "put accepts an interior pointer" {
 test "threads hammer the pool" {
     const allocator = std.testing.allocator;
 
-    var pool = try BufferPool(true).init(allocator, 64, 512);
+    var pool: BufferPool(true) = undefined;
+    try pool.init(allocator, 64, 512);
     defer pool.deinit();
 
     const Worker = struct {

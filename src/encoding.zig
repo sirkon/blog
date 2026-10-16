@@ -328,8 +328,8 @@ pub fn errorValueSize(payload_len: usize) usize {
 pub const Frame = struct {
     cur: [*]u8,
 
-    pub inline fn init(payload_ptr: [*]u8) Frame {
-        return .{ .cur = payload_ptr };
+    pub inline fn init(self: *Frame, payload_ptr: [*]u8) void {
+        self.cur = payload_ptr;
     }
 
     pub inline fn appendField(self: *Frame, comptime name: []const u8, value: anytype) void {

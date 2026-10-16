@@ -119,16 +119,19 @@ pub fn main() !void {
     const allocator = std.heap.page_allocator;
 
     // 1. Pool: size must be a power of two, frameSize a power of two >= 512.
-    var pool = try blog.BufferPool.init(allocator, 64, 16 * 1024);
+    var pool: blog.BufferPool = undefined;
+    try pool.init(allocator, 64, 16 * 1024);
     defer pool.deinit();
 
     // 2. Sink. MemorySink captures records in memory; FdWriter + PrettySink
     //    renders them for humans.
-    var sink = blog.MemorySink.init(allocator);
+    var sink: blog.MemorySink = undefined;
+    sink.init(allocator);
     defer sink.deinit();
 
     // 3. Logger is comptime-parameterized over both; no vtables on the hot path.
-    var logger = blog.Logger(blog.BufferPool, blog.MemorySink).init(&pool, &sink);
+    var logger: blog.Logger(blog.BufferPool, blog.MemorySink) = undefined;
+    logger.init(&pool, &sink);
 
     logger.info("hello", .{ .n = @as(u32, 7) });
 
@@ -152,12 +155,13 @@ and `JsonSink` is typed against the concrete `BufferPool` =
 threads through the *same* logger value guarded elsewhere.
 
 ```zig
-var pool = try blog.BufferPool.init(allocator, 64, 16 * 1024);
+var pool: blog.BufferPool = undefined;
+try pool.init(allocator, 64, 16 * 1024);
 defer pool.deinit();
 ```
 
 ```zig
-pub fn init(allocator: std.mem.Allocator, size: u32, frameSize: u32) !Self
+pub fn init(self: *Self, allocator: std.mem.Allocator, size: u32, frameSize: u32) !void
 pub fn deinit(self: *Self) void
 pub fn get(self: *Self, size: usize) std.mem.Allocator.Error![]u8
 pub fn put(self: *Self, buf: []u8) bool
@@ -178,7 +182,8 @@ For the thread-safe variant, use the factory directly:
 
 ```zig
 const Pool = blog.BufferPoolFactory(true);
-var pool = try Pool.init(allocator, 64, 16 * 1024);
+var pool: Pool = undefined;
+try pool.init(allocator, 64, 16 * 1024);
 defer pool.deinit();
 ```
 
@@ -199,7 +204,8 @@ pub fn Logger(comptime Pool: type, comptime Sink: type) type
 Construction and teardown:
 
 ```zig
-var logger = blog.Logger(Pool, Sink).init(&pool, &sink);
+var logger: blog.Logger(Pool, Sink) = undefined;
+logger.init(&pool, &sink);
 defer logger.deinit(); // releases the With prefix frame and unlogged diagnostics
 ```
 
@@ -261,8 +267,8 @@ child.info("tick", .{ .n = @as(u32, 1) });
   (`comptime std.debug.assert(!hasDiagnostics(...))`), because a prefix is copied
   once per record and a diagnostic is log-once.
 - If the pool cannot provide the prefix frame, `With` does not fail: it drops the
-  record accounting and returns an *empty* logger (`Self.init(pool, sink)`) with a
-  zero-length prefix. Silent, but it only happens under exhaustion.
+  record accounting and returns an *empty* logger value with a zero-length
+  prefix. Silent, but it only happens under exhaustion.
 
 ### Locations
 
@@ -407,7 +413,8 @@ is, which is why tests pass a `std.Io.Writer.Allocating`.
 
 ```zig
 /// Concrete: capture every record in memory. Used by tests.
-var sink = blog.MemorySink.init(allocator);
+var sink: blog.MemorySink = undefined;
+sink.init(allocator);
 defer sink.deinit();          // frees `sink.bytes`
 _ = sink.bytes.items;         // all frames concatenated
 _ = sink.dropped.load(.monotonic);
@@ -415,7 +422,8 @@ _ = sink.dropped.load(.monotonic);
 
 ```zig
 /// Concrete: raw POSIX fd, all bytes written, retries short writes and EINTR.
-var w = blog.FdWriter.init(file.handle); // or std.posix.STDOUT_FILENO
+var w: blog.FdWriter = undefined;
+w.init(file.handle); // or std.posix.STDOUT_FILENO
 _ = try w.write("bytes");
 ```
 
@@ -423,13 +431,16 @@ _ = try w.write("bytes");
 
 ```zig
 /// FileSink(W): forwards each frame to `W`, keeps `last_error`, counts `written`.
-var downstream = blog.FdWriter.init(1);
-var sink = blog.FileSink(blog.FdWriter).init(&downstream);
+var downstream: blog.FdWriter = undefined;
+downstream.init(1);
+var sink: blog.FileSink(blog.FdWriter) = undefined;
+sink.init(&downstream);
 ```
 
 ```zig
 /// SyncWriter(W): serializes concurrent calls with a libc mutex.
-var synced = blog.SyncWriter(blog.FdWriter).init(&downstream);
+var synced: blog.SyncWriter(blog.FdWriter) = undefined;
+synced.init(&downstream);
 defer synced.deinit(); // destroys the mutex
 ```
 
@@ -441,8 +452,10 @@ lives inline and must keep a stable address.
 
 ```zig
 /// PrettySink(W): verify the frame, parse it, render tree or compact JSON.
-var out = blog.FdWriter.init(1);
-var sink = blog.PrettySink(blog.FdWriter).init(allocator, blog.ColorProfile.dark, &out);
+var out: blog.FdWriter = undefined;
+out.init(1);
+var sink: blog.PrettySink(blog.FdWriter) = undefined;
+sink.init(allocator, blog.ColorProfile.dark, &out);
 defer sink.deinit();
 sink.options = .{ .tz_offset_seconds = 3 * 3600 }; // public field, set any time
 sink.profile = blog.ColorProfile.plain;            // public field
@@ -450,7 +463,8 @@ sink.profile = blog.ColorProfile.plain;            // public field
 
 ```zig
 /// JsonSink(W): one compact JSON object per record, newline-terminated.
-var sink = blog.JsonSink(std.Io.Writer).init(allocator, &out.writer);
+var sink: blog.JsonSink(std.Io.Writer) = undefined;
+sink.init(allocator, &out.writer);
 defer sink.deinit();
 ```
 
@@ -580,7 +594,8 @@ pub fn parseRecord(allocator, payload: []const u8, rec: *ParsedRecord) ParseErro
   `uvarint`, `le`, `raw`, `byte`).
 
 ```zig
-var renderer = blog.render.Renderer.init(allocator, blog.ColorProfile.plain);
+var renderer: blog.render.Renderer = undefined;
+renderer.init(allocator, blog.ColorProfile.plain);
 defer renderer.deinit();
 
 var dst: std.ArrayList(u8) = .empty; // caller-owned; freed by the caller
@@ -795,16 +810,20 @@ pub fn main() !void {
     const allocator = gpa_state.allocator();
 
     // Pool: 4096 frames of 4 KiB. Both must be powers of two; frameSize >= 512.
-    var pool = try blog.BufferPool.init(allocator, 4096, 4096);
+    var pool: blog.BufferPool = undefined;
+    try pool.init(allocator, 4096, 4096);
     defer pool.deinit();
 
     // Render straight to stdout.
-    var fd = blog.FdWriter.init(std.posix.STDOUT_FILENO);
-    var sink = blog.PrettySink(blog.FdWriter).init(allocator, blog.ColorProfile.dark, &fd);
+    var fd: blog.FdWriter = undefined;
+    fd.init(std.posix.STDOUT_FILENO);
+    var sink: blog.PrettySink(blog.FdWriter) = undefined;
+    sink.init(allocator, blog.ColorProfile.dark, &fd);
     defer sink.deinit();
     sink.options = .{ .tz_offset_seconds = 3 * 3600 };
 
-    var logger = blog.Logger(blog.BufferPool, blog.PrettySink(blog.FdWriter)).init(&pool, &sink);
+    var logger: blog.Logger(blog.BufferPool, blog.PrettySink(blog.FdWriter)) = undefined;
+    logger.init(&pool, &sink);
 
     logger.info("server started", .{
         .addr = "127.0.0.1:8080",
@@ -836,9 +855,11 @@ pub fn main() !void {
 For JSONL instead of a tree, swap the sink and keep everything else:
 
 ```zig
-var sink = blog.JsonSink(blog.FdWriter).init(allocator, &fd);
+var sink: blog.JsonSink(blog.FdWriter) = undefined;
+sink.init(allocator, &fd);
 defer sink.deinit();
-var logger = blog.Logger(blog.BufferPool, blog.JsonSink(blog.FdWriter)).init(&pool, &sink);
+var logger: blog.Logger(blog.BufferPool, blog.JsonSink(blog.FdWriter)) = undefined;
+logger.init(&pool, &sink);
 ```
 
 For the raw binary log (to be rendered later by a viewer), hand any downstream

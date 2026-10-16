@@ -380,7 +380,8 @@ pub fn Diag(comptime Pool: type) type {
 
             if (loc) |l| cur = putLocation(cur, l);
 
-            var frame = encoding.Frame.init(cur);
+            var frame: encoding.Frame = undefined;
+            frame.init(cur);
             const info = @typeInfo(T);
             inline for (info.@"struct".fields) |field| {
                 frame.appendField(field.name, @field(ctx, field.name));
@@ -490,9 +491,9 @@ fn TestRig(comptime frames: u32, comptime frame_size: u32) type {
         logger: Logger,
 
         fn init(self: *@This(), allocator: std.mem.Allocator) !void {
-            self.pool = try Pool.init(allocator, frames, frame_size);
-            self.sink = Sink.init(allocator);
-            self.logger = Logger.init(&self.pool, &self.sink);
+            try self.pool.init(allocator, frames, frame_size);
+            self.sink.init(allocator);
+            self.logger.init(&self.pool, &self.sink);
         }
 
         fn deinit(self: *@This()) void {
@@ -806,11 +807,13 @@ test "the payload frame is returned even when the sink fails" {
         }
     };
 
-    var pool = try Pool.init(a, 2, 512);
+    var pool: Pool = undefined;
+    try pool.init(a, 2, 512);
     defer pool.deinit();
 
     var sink = FailingSink{};
-    var logger = logger_mod.Logger(Pool, FailingSink).init(&pool, &sink);
+    var logger: logger_mod.Logger(Pool, FailingSink) = undefined;
+    logger.init(&pool, &sink);
 
     const diag = try logger.err_after(error.OutOfMemory, .{});
     const frame_ptr = diag.payload.ptr;
@@ -880,7 +883,8 @@ test "touching the dead payload of a diagnostic dies with SIGSEGV" {
     if (builtin.os.tag != .linux) return error.SkipZigTest;
 
     const Pool = buffer_pool.BufferPool(false);
-    var pool = try Pool.init(std.heap.page_allocator, 2, 512);
+    var pool: Pool = undefined;
+    try pool.init(std.heap.page_allocator, 2, 512);
     defer pool.deinit();
 
     const Child = struct {
@@ -938,13 +942,16 @@ test "pool exhaustion surfaces as an allocation error" {
     var failing = std.testing.FailingAllocator.init(std.testing.allocator, .{ .fail_index = 3 });
     const a = failing.allocator();
 
-    var pool = try Pool.init(a, 1, 512);
+    var pool: Pool = undefined;
+    try pool.init(a, 1, 512);
     defer pool.deinit();
 
-    var sink = Sink.init(std.testing.allocator);
+    var sink: Sink = undefined;
+    sink.init(std.testing.allocator);
     defer sink.deinit();
 
-    var logger = logger_mod.Logger(Pool, Sink).init(&pool, &sink);
+    var logger: logger_mod.Logger(Pool, Sink) = undefined;
+    logger.init(&pool, &sink);
     defer logger.deinit();
 
     // Occupy the only frame: the diagnostic then has to fall back to the heap,
@@ -987,13 +994,16 @@ test "unlogged diagnostics are released by logger deinit" {
     const Pool = buffer_pool.BufferPool(false);
     const Sink = writer_mod.MemorySink;
 
-    var pool = try Pool.init(a, 2, 512);
+    var pool: Pool = undefined;
+    try pool.init(a, 2, 512);
     defer pool.deinit();
 
-    var sink = Sink.init(a);
+    var sink: Sink = undefined;
+    sink.init(a);
     defer sink.deinit();
 
-    var logger = logger_mod.Logger(Pool, Sink).init(&pool, &sink);
+    var logger: logger_mod.Logger(Pool, Sink) = undefined;
+    logger.init(&pool, &sink);
     _ = try logger.err_after(error.NotFound, .{ .name = "never logged" });
 
     // Without this the pool's deinit assertion would trip on the leaked frame.
@@ -1015,16 +1025,19 @@ test "a logged diagnostic renders through the JSON sink" {
     const Pool = buffer_pool.BufferPool(false);
     const Sink = writer_mod.JsonSink(Capture);
 
-    var pool = try Pool.init(a, 4, 4096);
+    var pool: Pool = undefined;
+    try pool.init(a, 4, 4096);
     defer pool.deinit();
 
     var out = Capture{};
     defer out.list.deinit(a);
 
-    var sink = Sink.init(a, &out);
+    var sink: Sink = undefined;
+    sink.init(a, &out);
     defer sink.deinit();
 
-    var logger = logger_mod.Logger(Pool, Sink).init(&pool, &sink);
+    var logger: logger_mod.Logger(Pool, Sink) = undefined;
+    logger.init(&pool, &sink);
     defer logger.deinit();
 
     var diag = try logger.err_after(error.NotFound, .{ .name = "config" });
