@@ -10,9 +10,13 @@ records are unreadable binary without it).
 
 ## Toolchain
 
-Managed by `mise.toml`: **Go 1.26.2** and **Zig 0.16**. Use these exact
-versions; the Zig code targets 0.16 std APIs (`std.process.Init`, `std.Io`,
+Managed by `mise.toml`: **Go 1.26.2** and **Zig 0.17**. Use these exact
+versions; the Zig code targets 0.17 std APIs (`std.process.Init`, `std.Io`,
 `std.Io.Writer.Allocating`, `std.ArrayList.empty`) and will not compile on 0.14.
+
+Two 0.17 changes are easy to trip over: array repetition (`**`) was removed in
+favor of `@splat`, and reflection field iteration moved from
+`@typeInfo(T).@"struct".fields` to parallel `field_names`/`field_types` slices.
 
 ## Commands
 
@@ -139,7 +143,8 @@ carry that known-key code, which is why `attr_serialize.go` shifts by 8.
 - `render.zig` - tree/JSON renderer (`Renderer`, `ColorProfile`,
   `RenderOptions`) plus the golden fixtures that mirror
   `blog-rs/src/testdata/*.bin`.
-- `jsonsink.zig` - compact JSONL sink; uses the `jsonescape` dependency.
+- `jsonsink.zig` - compact JSONL sink; uses the `jsonescape` dependency,
+  pinned in `build.zig.zon` and fetched from `github.com/sirkon/jsonescape`.
 - `main.zig` - CLI. **Current state:** the working tree replaced the real CLI
   (arg parsing, `--json`, `--dark/--light/--no-color`, `--tz-offset`, file/`-`
   stdin handling) with a single smoke test that renders one hardcoded record.

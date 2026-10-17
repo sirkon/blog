@@ -653,7 +653,7 @@ pub const PB = struct {
 
     /// kind byte + uvarint(len(key)) + key bytes.
     pub fn key(self: *PB, a: std.mem.Allocator, kind: consts.ValueKind, k: []const u8) !void {
-        try self.byte(a, @intFromEnum(kind));
+        try self.byte(a, @backingInt(kind));
         try self.uvarint(a, k.len);
         try self.raw(a, k);
     }
@@ -678,7 +678,7 @@ test "parse message-only record" {
     const a = testing.allocator;
     var pb = PB{};
     defer pb.deinit(a);
-    try pb.header(a, 0x0102030405060708, @intFromEnum(consts.logLevel.info));
+    try pb.header(a, 0x0102030405060708, @backingInt(consts.logLevel.info));
     try pb.msg(a, "just a message");
 
     var rec = ParsedRecord{};
@@ -686,7 +686,7 @@ test "parse message-only record" {
     try parseRecord(a, pb.list.items, &rec);
 
     try testing.expectEqual(@as(u64, 0x0102030405060708), rec.time);
-    try testing.expectEqual(@intFromEnum(consts.logLevel.info), rec.level);
+    try testing.expectEqual(@backingInt(consts.logLevel.info), rec.level);
     try testing.expect(rec.loc == null);
     try testing.expectEqualSlices(u8, "just a message", payloadOf(&rec, pb.list.items, .{
         .kind = .str,
@@ -705,7 +705,7 @@ test "parse header location" {
     var pb = PB{};
     defer pb.deinit(a);
     const file = "/Users/me/alchemy_test.go";
-    try pb.headerLoc(a, 42, @intFromEnum(consts.logLevel.warning), file, 265);
+    try pb.headerLoc(a, 42, @backingInt(consts.logLevel.warning), file, 265);
     try pb.msg(a, "m");
 
     var rec = ParsedRecord{};
@@ -722,7 +722,7 @@ test "flat context values" {
     const a = testing.allocator;
     var pb = PB{};
     defer pb.deinit(a);
-    try pb.header(a, 7, @intFromEnum(consts.logLevel.info));
+    try pb.header(a, 7, @backingInt(consts.logLevel.info));
     try pb.msg(a, "m");
 
     try pb.key(a, .int64, "int");
@@ -762,19 +762,19 @@ test "groups: empty, populated, nested" {
     const a = testing.allocator;
     var pb = PB{};
     defer pb.deinit(a);
-    try pb.header(a, 1, @intFromEnum(consts.logLevel.info));
+    try pb.header(a, 1, @backingInt(consts.logLevel.info));
     try pb.msg(a, "m");
 
     // empty group
     try pb.key(a, .nodeGroup, "empty");
-    try pb.byte(a, @intFromEnum(consts.ValueKind.nodeGroupEnd));
+    try pb.byte(a, @backingInt(consts.ValueKind.nodeGroupEnd));
 
     // group with two children
     try pb.key(a, .nodeGroup, "group");
     try pb.key(a, .int64, "int");
     try pb.le(a, u64, @bitCast(@as(i64, 4)));
     try pb.strField(a, "string", "Hello World!");
-    try pb.byte(a, @intFromEnum(consts.ValueKind.nodeGroupEnd));
+    try pb.byte(a, @backingInt(consts.ValueKind.nodeGroupEnd));
 
     // outer > inner
     try pb.key(a, .nodeGroup, "outer");
@@ -782,10 +782,10 @@ test "groups: empty, populated, nested" {
     try pb.key(a, .int64, "int1");
     try pb.le(a, u64, @bitCast(@as(i64, 5)));
     try pb.strField(a, "string1", "I'm here");
-    try pb.byte(a, @intFromEnum(consts.ValueKind.nodeGroupEnd));
+    try pb.byte(a, @backingInt(consts.ValueKind.nodeGroupEnd));
     try pb.key(a, .int64, "int");
     try pb.le(a, u64, @bitCast(@as(i64, 4)));
-    try pb.byte(a, @intFromEnum(consts.ValueKind.nodeGroupEnd));
+    try pb.byte(a, @backingInt(consts.ValueKind.nodeGroupEnd));
 
     var rec = ParsedRecord{};
     defer rec.deinit(a);
@@ -816,7 +816,7 @@ test "error with stage + location + attr, double group end" {
     const a = testing.allocator;
     var pb = PB{};
     defer pb.deinit(a);
-    try pb.header(a, 1, @intFromEnum(consts.logLevel.err));
+    try pb.header(a, 1, @backingInt(consts.logLevel.err));
     try pb.msg(a, "errors");
 
     try pb.key(a, .nodeError, "err-beer");
@@ -824,8 +824,8 @@ test "error with stage + location + attr, double group end" {
     try pb.key(a, .nodeLocation, "@location");
     try pb.uvarint(a, 331);
     try pb.strField(a, "new-string", "Hello World!");
-    try pb.byte(a, @intFromEnum(consts.ValueKind.nodeGroupEnd));
-    try pb.byte(a, @intFromEnum(consts.ValueKind.nodeGroupEnd));
+    try pb.byte(a, @backingInt(consts.ValueKind.nodeGroupEnd));
+    try pb.byte(a, @backingInt(consts.ValueKind.nodeGroupEnd));
 
     var rec = ParsedRecord{};
     defer rec.deinit(a);
@@ -853,7 +853,7 @@ test "error embed stores foreign text then payload" {
     const a = testing.allocator;
     var pb = PB{};
     defer pb.deinit(a);
-    try pb.header(a, 1, @intFromEnum(consts.logLevel.err));
+    try pb.header(a, 1, @backingInt(consts.logLevel.err));
     try pb.msg(a, "errors");
 
     try pb.key(a, .nodeErrorEmbed, "err-embed");
@@ -865,8 +865,8 @@ test "error embed stores foreign text then payload" {
     try pb.uvarint(a, 335);
     try pb.key(a, .bool, "wrap-bool");
     try pb.byte(a, 1);
-    try pb.byte(a, @intFromEnum(consts.ValueKind.nodeGroupEnd));
-    try pb.byte(a, @intFromEnum(consts.ValueKind.nodeGroupEnd));
+    try pb.byte(a, @backingInt(consts.ValueKind.nodeGroupEnd));
+    try pb.byte(a, @backingInt(consts.ValueKind.nodeGroupEnd));
 
     var rec = ParsedRecord{};
     defer rec.deinit(a);
@@ -887,16 +887,16 @@ test "foreign error text under a context stage" {
     const a = testing.allocator;
     var pb = PB{};
     defer pb.deinit(a);
-    try pb.header(a, 1, @intFromEnum(consts.logLevel.err));
+    try pb.header(a, 1, @backingInt(consts.logLevel.err));
     try pb.msg(a, "errors");
 
     // Mirrors JustError(foreign): [ForeignErrorText, JustContextNode] wrapped
     // by the error attr's double group end.
     try pb.key(a, .nodeError, "err-foreign");
     try pb.key(a, .nodeForeignErrorText, "EOF");
-    try pb.byte(a, @intFromEnum(consts.ValueKind.nodeContext));
-    try pb.byte(a, @intFromEnum(consts.ValueKind.nodeGroupEnd));
-    try pb.byte(a, @intFromEnum(consts.ValueKind.nodeGroupEnd));
+    try pb.byte(a, @backingInt(consts.ValueKind.nodeContext));
+    try pb.byte(a, @backingInt(consts.ValueKind.nodeGroupEnd));
+    try pb.byte(a, @backingInt(consts.ValueKind.nodeGroupEnd));
 
     var rec = ParsedRecord{};
     defer rec.deinit(a);
@@ -919,7 +919,7 @@ test "slices store count and offset" {
     const a = testing.allocator;
     var pb = PB{};
     defer pb.deinit(a);
-    try pb.header(a, 1, @intFromEnum(consts.logLevel.info));
+    try pb.header(a, 1, @backingInt(consts.logLevel.info));
     try pb.msg(a, "m");
 
     try pb.key(a, .sliceInt64, "int64");
@@ -956,7 +956,7 @@ test "readUvarint bounds and overflow" {
     try testing.expectError(error.Truncated, readUvarint(&[_]u8{0x80}, 0));
     try testing.expectError(error.Truncated, readUvarint(&[_]u8{}, 0));
     // Ten bytes all with the continuation bit never terminates cleanly.
-    const overflow = [_]u8{0x80} ** 10;
+    const overflow: [10]u8 = @splat(0x80);
     try testing.expectError(error.VarintOverflow, readUvarint(&overflow, 0));
     // Valid one-byte.
     const one = try readUvarint(&[_]u8{0x7f}, 0);
@@ -968,7 +968,7 @@ test "record reuse does not accumulate nodes" {
     const a = testing.allocator;
     var pb = PB{};
     defer pb.deinit(a);
-    try pb.header(a, 1, @intFromEnum(consts.logLevel.info));
+    try pb.header(a, 1, @backingInt(consts.logLevel.info));
     try pb.msg(a, "one");
     try pb.strField(a, "k", "v");
 
@@ -980,21 +980,21 @@ test "record reuse does not accumulate nodes" {
 
     var pb2 = PB{};
     defer pb2.deinit(a);
-    try pb2.header(a, 2, @intFromEnum(consts.logLevel.warning));
+    try pb2.header(a, 2, @backingInt(consts.logLevel.warning));
     try pb2.msg(a, "two");
 
     try parseRecord(a, pb2.list.items, &rec);
     try testing.expectEqual(@as(usize, 0), rec.builder.ctrl.items.len);
     try testing.expectEqual(@as(usize, 0), rec.ctx_size);
     try testing.expectEqual(@as(u64, 2), rec.time);
-    try testing.expectEqual(@intFromEnum(consts.logLevel.warning), rec.level);
+    try testing.expectEqual(@backingInt(consts.logLevel.warning), rec.level);
 }
 
 test "all basic scalar kinds parse" {
     const a = testing.allocator;
     var pb = PB{};
     defer pb.deinit(a);
-    try pb.header(a, 1, @intFromEnum(consts.logLevel.info));
+    try pb.header(a, 1, @backingInt(consts.logLevel.info));
     try pb.msg(a, "m");
 
     try pb.key(a, .bool, "bool");
@@ -1053,11 +1053,11 @@ test "predefined key index is stored as key_off" {
     const a = testing.allocator;
     var pb = PB{};
     defer pb.deinit(a);
-    try pb.header(a, 1, @intFromEnum(consts.logLevel.info));
+    try pb.header(a, 1, @backingInt(consts.logLevel.info));
     try pb.msg(a, "m");
 
     // Zero key marker then the predefined index, then a bool value.
-    try pb.byte(a, @intFromEnum(consts.ValueKind.bool));
+    try pb.byte(a, @backingInt(consts.ValueKind.bool));
     try pb.byte(a, 0);
     try pb.uvarint(a, 7);
     try pb.byte(a, 1);
@@ -1093,22 +1093,22 @@ test "parse rejects unsupported version and truncated records" {
     defer header_only.deinit(a);
     try header_only.le(a, u16, consts.version);
     try header_only.le(a, u64, 0);
-    try header_only.byte(a, @intFromEnum(consts.logLevel.info));
+    try header_only.byte(a, @backingInt(consts.logLevel.info));
     try testing.expectEqual(@as(usize, 11), header_only.list.items.len);
     try testing.expectError(error.Truncated, parseRecord(a, header_only.list.items, &rec));
 
     // Lone value kind byte with no key follows the message.
     var bare_kind = PB{};
     defer bare_kind.deinit(a);
-    try bare_kind.header(a, 0, @intFromEnum(consts.logLevel.info));
+    try bare_kind.header(a, 0, @backingInt(consts.logLevel.info));
     try bare_kind.msg(a, "m");
-    try bare_kind.byte(a, @intFromEnum(consts.ValueKind.string));
+    try bare_kind.byte(a, @backingInt(consts.ValueKind.string));
     try testing.expectError(error.Truncated, parseRecord(a, bare_kind.list.items, &rec));
 
     // Unknown value kind byte.
     var bad_kind = PB{};
     defer bad_kind.deinit(a);
-    try bad_kind.header(a, 0, @intFromEnum(consts.logLevel.info));
+    try bad_kind.header(a, 0, @backingInt(consts.logLevel.info));
     try bad_kind.msg(a, "m");
     try bad_kind.byte(a, 200);
     try testing.expectError(error.UnknownValueKind, parseRecord(a, bad_kind.list.items, &rec));
@@ -1116,8 +1116,8 @@ test "parse rejects unsupported version and truncated records" {
     // Unbalanced group end.
     var extra_end = PB{};
     defer extra_end.deinit(a);
-    try extra_end.header(a, 0, @intFromEnum(consts.logLevel.info));
+    try extra_end.header(a, 0, @backingInt(consts.logLevel.info));
     try extra_end.msg(a, "m");
-    try extra_end.byte(a, @intFromEnum(consts.ValueKind.nodeGroupEnd));
+    try extra_end.byte(a, @backingInt(consts.ValueKind.nodeGroupEnd));
     try testing.expectError(error.Truncated, parseRecord(a, extra_end.list.items, &rec));
 }

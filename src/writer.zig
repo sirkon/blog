@@ -68,9 +68,9 @@ fn assertWriter(comptime Writer: type) void {
             @typeName(Writer) ++ ", []const u8) E!usize`");
     }
     const info = @typeInfo(WriteFn).@"fn";
-    if (info.params.len != 2 or
-        info.params[0].type != *Writer or
-        info.params[1].type != []const u8)
+    if (info.param_types.len != 2 or
+        info.param_types[0] != *Writer or
+        info.param_types[1] != []const u8)
     {
         @compileError(@typeName(Writer) ++ ".write must have the signature `fn (*" ++
             @typeName(Writer) ++ ", []const u8) E!usize`");
@@ -685,7 +685,7 @@ test "pretty sink renders a frame and releases the buffer" {
 
     var pb = viewer.PB{};
     defer pb.deinit(allocator);
-    try pb.header(allocator, 0, @intFromEnum(consts.logLevel.info));
+    try pb.header(allocator, 0, @backingInt(consts.logLevel.info));
     try pb.msg(allocator, "just a message");
 
     const size = frameSize(pb.list.items.len);
@@ -723,7 +723,7 @@ test "pretty sink drops a corrupt frame and releases the buffer" {
 
     var pb = viewer.PB{};
     defer pb.deinit(allocator);
-    try pb.header(allocator, 0, @intFromEnum(consts.logLevel.info));
+    try pb.header(allocator, 0, @backingInt(consts.logLevel.info));
     try pb.msg(allocator, "just a message");
 
     const size = frameSize(pb.list.items.len);
@@ -759,7 +759,7 @@ test "pretty sink reuses parser and renderer across records" {
 
     var pb = viewer.PB{};
     defer pb.deinit(allocator);
-    try pb.header(allocator, 0, @intFromEnum(consts.logLevel.info));
+    try pb.header(allocator, 0, @backingInt(consts.logLevel.info));
     try pb.msg(allocator, "one");
     try pb.key(allocator, .int64, "a");
     try pb.le(allocator, u64, 1);
@@ -777,7 +777,7 @@ test "pretty sink reuses parser and renderer across records" {
 
     var pb2 = viewer.PB{};
     defer pb2.deinit(allocator);
-    try pb2.header(allocator, 1_000_000, @intFromEnum(consts.logLevel.warning));
+    try pb2.header(allocator, 1_000_000, @backingInt(consts.logLevel.warning));
     try pb2.msg(allocator, "two");
 
     const size2 = frameSize(pb2.list.items.len);
@@ -932,7 +932,7 @@ test "pretty sink writes a rendered record to a file" {
 
     var pb = viewer.PB{};
     defer pb.deinit(allocator);
-    try pb.header(allocator, 0, @intFromEnum(consts.logLevel.info));
+    try pb.header(allocator, 0, @backingInt(consts.logLevel.info));
     try pb.msg(allocator, "to a file");
 
     const size = frameSize(pb.list.items.len);
@@ -973,7 +973,7 @@ test "json sink renders a frame and releases both buffers" {
 
     var pb = viewer.PB{};
     defer pb.deinit(allocator);
-    try pb.header(allocator, 0, @intFromEnum(consts.logLevel.info));
+    try pb.header(allocator, 0, @backingInt(consts.logLevel.info));
     try pb.msg(allocator, "just a message");
 
     const size = frameSize(pb.list.items.len);
@@ -1015,7 +1015,7 @@ test "json sink drops a corrupt frame and releases the buffer" {
 
     var pb = viewer.PB{};
     defer pb.deinit(allocator);
-    try pb.header(allocator, 0, @intFromEnum(consts.logLevel.info));
+    try pb.header(allocator, 0, @backingInt(consts.logLevel.info));
     try pb.msg(allocator, "just a message");
 
     const size = frameSize(pb.list.items.len);
@@ -1066,7 +1066,7 @@ test "json sink drops malformed payloads without writing" {
         defer pb.deinit(allocator);
         try pb.le(allocator, u16, consts.version);
         try pb.le(allocator, u64, 0);
-        try pb.byte(allocator, @intFromEnum(consts.logLevel.info));
+        try pb.byte(allocator, @backingInt(consts.logLevel.info));
         try pb.byte(allocator, 0);
         try pb.uvarint(allocator, 5);
         try pb.raw(allocator, "ab");
@@ -1076,7 +1076,7 @@ test "json sink drops malformed payloads without writing" {
     {
         var pb = viewer.PB{};
         defer pb.deinit(allocator);
-        try pb.header(allocator, 0, @intFromEnum(consts.logLevel.info));
+        try pb.header(allocator, 0, @backingInt(consts.logLevel.info));
         try pb.msg(allocator, "m");
         try pb.byte(allocator, 200);
         try writeFramed(&pool, &sink, &pb);
@@ -1085,7 +1085,7 @@ test "json sink drops malformed payloads without writing" {
     {
         var pb = viewer.PB{};
         defer pb.deinit(allocator);
-        try pb.header(allocator, 0, @intFromEnum(consts.logLevel.info));
+        try pb.header(allocator, 0, @backingInt(consts.logLevel.info));
         try pb.msg(allocator, "m");
         try pb.byte(allocator, 0);
         try pb.uvarint(allocator, 9);
@@ -1115,7 +1115,7 @@ test "json sink reuses state across records" {
 
     var pb = viewer.PB{};
     defer pb.deinit(allocator);
-    try pb.header(allocator, 1, @intFromEnum(consts.logLevel.debug));
+    try pb.header(allocator, 1, @backingInt(consts.logLevel.debug));
     try pb.msg(allocator, "one");
     try pb.key(allocator, .int64, "a");
     try pb.le(allocator, u64, 1);
@@ -1123,7 +1123,7 @@ test "json sink reuses state across records" {
 
     var pb2 = viewer.PB{};
     defer pb2.deinit(allocator);
-    try pb2.header(allocator, 1_000_000, @intFromEnum(consts.logLevel.warning));
+    try pb2.header(allocator, 1_000_000, @backingInt(consts.logLevel.warning));
     try pb2.msg(allocator, "two");
     try writeFramed(&pool, &sink, &pb2);
 
@@ -1166,7 +1166,7 @@ test "json sink writes a JSONL line to a file" {
 
     var pb = viewer.PB{};
     defer pb.deinit(allocator);
-    try pb.header(allocator, 0, @intFromEnum(consts.logLevel.info));
+    try pb.header(allocator, 0, @backingInt(consts.logLevel.info));
     try pb.msg(allocator, "to a file");
 
     const size = frameSize(pb.list.items.len);

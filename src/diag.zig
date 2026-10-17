@@ -80,7 +80,7 @@ pub const defaultPayloadSize: usize = 512;
 /// Whether a diagnostic carries its live flag and validates it on every use.
 /// Only Debug and ReleaseSafe keep the field; release builds drop it so the
 /// struct is smaller and the checks compile away entirely.
-pub const runtime_checked: bool = builtin.mode == .Debug or builtin.mode == .ReleaseSafe;
+pub const runtime_checked: bool = builtin.mode == .debug or builtin.mode == .safe;
 
 /// The raw `anyerror` code for a spec. The code is an implementation detail of
 /// the Zig runtime and only meaningful to `specToError` in the same process.
@@ -383,9 +383,9 @@ pub fn Diag(comptime Pool: type) type {
 
             var frame: encoding.Frame = undefined;
             frame.init(cur);
-            const info = @typeInfo(T);
-            inline for (info.@"struct".fields) |field| {
-                frame.appendField(field.name, @field(ctx, field.name));
+            const info = @typeInfo(T).@"struct";
+            inline for (info.field_names, info.field_types) |name, _| {
+                frame.appendField(name, @field(ctx, name));
             }
             cur = frame.cur;
 
@@ -419,7 +419,7 @@ pub fn Diag(comptime Pool: type) type {
         }
 
         inline fn putKind(cur: [*]u8, comptime kind: consts.ValueKind) [*]u8 {
-            cur[0] = @intFromEnum(kind);
+            cur[0] = @backingInt(kind);
             return cur + 1;
         }
 
@@ -519,7 +519,7 @@ test "diag_err encodes message, context and group end" {
     // nodeNew | varint(8) | "NotFound" | string(1) + varint(4) + "name" +
     // varint(6) + "config" | nodeGroupEnd
     const golden = [_]u8{
-        @intFromEnum(consts.ValueKind.nodeNew),
+        @backingInt(consts.ValueKind.nodeNew),
         8,
         'N',
         'o',
@@ -529,7 +529,7 @@ test "diag_err encodes message, context and group end" {
         'u',
         'n',
         'd',
-        @intFromEnum(consts.ValueKind.string),
+        @backingInt(consts.ValueKind.string),
         4,
         'n',
         'a',
@@ -542,7 +542,7 @@ test "diag_err encodes message, context and group end" {
         'f',
         'i',
         'g',
-        @intFromEnum(consts.ValueKind.nodeGroupEnd),
+        @backingInt(consts.ValueKind.nodeGroupEnd),
     };
     try expectEqualSlices(u8, &golden, diag.payloadSlice());
 }
@@ -600,7 +600,7 @@ test "diag_txt_loc encodes a location node with the line" {
     try expectEqual(@as(?anyerror, null), diag.spec());
 
     const payload = diag.payloadSlice();
-    try expectEqual(@intFromEnum(consts.ValueKind.nodeNew), payload[0]);
+    try expectEqual(@backingInt(consts.ValueKind.nodeNew), payload[0]);
 
     var off: usize = 1;
     var len: u64 = 0;
@@ -608,7 +608,7 @@ test "diag_txt_loc encodes a location node with the line" {
     try expectEqualSlices(u8, "boom", payload[off + 1 ..][0..@intCast(len)]);
     off = @intFromPtr(after_len) - @intFromPtr(payload.ptr) + @as(usize, @intCast(len));
 
-    try expectEqual(@intFromEnum(consts.ValueKind.nodeLocation), payload[off]);
+    try expectEqual(@backingInt(consts.ValueKind.nodeLocation), payload[off]);
     off += 1;
     const after_file_len = try decoding.decodeVarint(&len, @constCast(payload.ptr + off));
     const file = payload[off + 1 ..][0..@intCast(len)];
@@ -620,7 +620,7 @@ test "diag_txt_loc encodes a location node with the line" {
     try expectEqual(@as(u64, loc.line), line);
     off = @intFromPtr(after_line) - @intFromPtr(payload.ptr);
 
-    try expectEqual(@intFromEnum(consts.ValueKind.nodeGroupEnd), payload[off]);
+    try expectEqual(@backingInt(consts.ValueKind.nodeGroupEnd), payload[off]);
 }
 
 test "wrap and with chain one group per stage" {
@@ -638,11 +638,11 @@ test "wrap and with chain one group per stage" {
     // of a record header plus the diagnostic itself.
     var pb = viewer.PB{};
     defer pb.deinit(a);
-    try pb.header(a, 0, @intFromEnum(consts.logLevel.err));
+    try pb.header(a, 0, @backingInt(consts.logLevel.err));
     try pb.msg(a, "m");
     try pb.key(a, .nodeError, "err");
     try pb.raw(a, diag.payloadSlice());
-    try pb.byte(a, @intFromEnum(consts.ValueKind.nodeGroupEnd));
+    try pb.byte(a, @backingInt(consts.ValueKind.nodeGroupEnd));
 
     var rec = viewer.ParsedRecord{};
     defer rec.deinit(a);
@@ -709,11 +709,11 @@ test "wrap_loc and with_loc attach the call site" {
 
     var pb = viewer.PB{};
     defer pb.deinit(a);
-    try pb.header(a, 0, @intFromEnum(consts.logLevel.err));
+    try pb.header(a, 0, @backingInt(consts.logLevel.err));
     try pb.msg(a, "m");
     try pb.key(a, .nodeError, "err");
     try pb.raw(a, diag.payloadSlice());
-    try pb.byte(a, @intFromEnum(consts.ValueKind.nodeGroupEnd));
+    try pb.byte(a, @backingInt(consts.ValueKind.nodeGroupEnd));
 
     var rec = viewer.ParsedRecord{};
     defer rec.deinit(a);
@@ -771,7 +771,7 @@ test "logging embeds the payload once and returns the frame" {
     var next = try decoding.decodeVarint(&len, @constCast(payload.ptr + off));
     off = @intFromPtr(next) - @intFromPtr(payload.ptr) + @as(usize, @intCast(len));
 
-    try expectEqual(@intFromEnum(consts.ValueKind.nodeError), payload[off]);
+    try expectEqual(@backingInt(consts.ValueKind.nodeError), payload[off]);
     off += 1;
     next = try decoding.decodeVarint(&len, @constCast(payload.ptr + off));
     try expectEqualSlices(u8, "err", payload[off + 1 ..][0..@intCast(len)]);
@@ -782,7 +782,7 @@ test "logging embeds the payload once and returns the frame" {
     const embedded = payload[off..][0..expected_len];
     try expectEqualSlices(u8, expected[0..expected_len], embedded);
     off += expected_len;
-    try expectEqual(@intFromEnum(consts.ValueKind.nodeGroupEnd), payload[off]);
+    try expectEqual(@backingInt(consts.ValueKind.nodeGroupEnd), payload[off]);
 
     // The payload frame is back in the pool: the record and the payload are
     // both free again, so the next two hand-outs are exactly those two frames.
@@ -900,7 +900,7 @@ test "touching the dead payload of a diagnostic dies with SIGSEGV" {
 
     var status: u32 = 0;
     while (true) {
-        const rc = linux.waitpid(@intCast(pid), &status, 0);
+        const rc = linux.waitpid(@intCast(pid), @ptrCast(&status), 0);
         switch (posix.errno(rc)) {
             .SUCCESS => break,
             .INTR => continue,
@@ -918,7 +918,7 @@ test "context larger than the initial payload grows safely" {
     try rig.init(a);
     defer rig.deinit();
 
-    const blob = "x" ** 1024;
+    const blob: []const u8 = &@as([1024]u8, @splat('x'));
     var diag = try rig.logger.diag_err(error.Unexpected, .{ .blob = blob, .n = @as(u8, 7) });
 
     // Far past a 512-byte frame, so the payload moved off the pool and the
@@ -1096,7 +1096,7 @@ test "logging through a with child works and releases both frames" {
     var next = try decoding.decodeVarint(&len, @constCast(payload.ptr + off));
     off = @intFromPtr(next) - @intFromPtr(payload.ptr) + @as(usize, @intCast(len));
 
-    try expectEqual(@intFromEnum(consts.ValueKind.string), payload[off]);
+    try expectEqual(@backingInt(consts.ValueKind.string), payload[off]);
     off += 1;
     next = try decoding.decodeVarint(&len, @constCast(payload.ptr + off));
     try expectEqualSlices(u8, "job", payload[off + 1 ..][0..@intCast(len)]);
@@ -1105,7 +1105,7 @@ test "logging through a with child works and releases both frames" {
     try expectEqualSlices(u8, "sync", payload[off + 1 ..][0..@intCast(len)]);
     off = @intFromPtr(next) - @intFromPtr(payload.ptr) + @as(usize, @intCast(len));
 
-    try expectEqual(@intFromEnum(consts.ValueKind.nodeError), payload[off]);
+    try expectEqual(@backingInt(consts.ValueKind.nodeError), payload[off]);
     try expectEqual(@as(u64, 0), rig.logger.dropped.load(.monotonic));
 }
 test "a diagnostic nested in a context group is consumed too" {
@@ -1128,12 +1128,12 @@ test "a diagnostic nested in a context group is consumed too" {
     var next = try decoding.decodeVarint(&len, @constCast(payload.ptr + off));
     off = @intFromPtr(next) - @intFromPtr(payload.ptr) + @as(usize, @intCast(len));
 
-    try expectEqual(@intFromEnum(consts.ValueKind.nodeGroup), payload[off]);
+    try expectEqual(@backingInt(consts.ValueKind.nodeGroup), payload[off]);
     off += 1;
     next = try decoding.decodeVarint(&len, @constCast(payload.ptr + off));
     try expectEqualSlices(u8, "where", payload[off + 1 ..][0..@intCast(len)]);
     off = @intFromPtr(next) - @intFromPtr(payload.ptr) + @as(usize, @intCast(len));
-    try expectEqual(@intFromEnum(consts.ValueKind.nodeError), payload[off]);
+    try expectEqual(@backingInt(consts.ValueKind.nodeError), payload[off]);
 
     // And the frame is free again.
     const first = try rig.pool.get(512);
@@ -1148,8 +1148,8 @@ test "a long chain keeps growing off the pool without leaking" {
     try rig.init(a);
     defer rig.deinit();
 
-    const pad = "z" ** 300;
-    var diag = try rig.logger.diag_err(error.NotFound, .{ .blob = "y" ** 700 });
+    const pad: []const u8 = &@as([300]u8, @splat('z'));
+    var diag = try rig.logger.diag_err(error.NotFound, .{ .blob = @as([]const u8, &@as([700]u8, @splat('y'))) });
     try expect(diag.payloadSize() > defaultPayloadSize);
 
     // Each stage moves the payload to a fresh allocation; the earlier ones are

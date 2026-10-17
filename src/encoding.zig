@@ -18,16 +18,15 @@ pub fn getStructEncodedSize(struct_val: anytype) usize {
     var totalSize: usize = 0;
 
     // Iterate over all fields of the anonymous struct at comptime
-    inline for (structInfo.@"struct".fields) |field| {
+    inline for (structInfo.@"struct".field_names, structInfo.@"struct".field_types) |name, FieldType| {
         // Each field starts with: 1 byte (typeCode) + varint(len(name)) + the name itself
-        const nameLen = field.name.len;
+        const nameLen = name.len;
         totalSize += 1; // typeCode: u8
         totalSize += varintSize(nameLen); // uvarint(len(item.name))
         totalSize += nameLen; // "${item.name}"
 
         // Get the field value
-        const val = @field(struct_val, field.name);
-        const FieldType = field.type;
+        const val = @field(struct_val, name);
 
         switch (@typeInfo(FieldType)) {
             .bool => {
@@ -108,7 +107,7 @@ pub fn getStructEncodedSize(struct_val: anytype) usize {
                     }
                 } else {
                     @compileError("Pointers other than dynamic slices ([]T) and strings are not " ++
-                        "supported by the rules. Field: " ++ field.name);
+                        "supported by the rules. Field: " ++ name);
                 }
             },
             .array => |arrInfo| {
@@ -385,7 +384,7 @@ pub const Frame = struct {
             };
         };
 
-        self.cur[0] = @intFromEnum(kind);
+        self.cur[0] = @backingInt(kind);
         self.cur += 1;
 
         self.cur = appendVarint(self.cur, name.len);
@@ -394,11 +393,11 @@ pub const Frame = struct {
 
         switch (@typeInfo(T)) {
             .@"struct" => {
-                const sub_info = @typeInfo(T);
-                inline for (sub_info.@"struct".fields) |f| {
-                    self.appendField(f.name, @field(value, f.name));
+                const sub_info = @typeInfo(T).@"struct";
+                inline for (sub_info.field_names) |field_name| {
+                    self.appendField(field_name, @field(value, field_name));
                 }
-                self.cur[0] = @intFromEnum(consts.ValueKind.nodeGroupEnd);
+                self.cur[0] = @backingInt(consts.ValueKind.nodeGroupEnd);
                 self.cur += 1;
             },
             .pointer => {
@@ -410,7 +409,7 @@ pub const Frame = struct {
                     const payload = value.payloadSlice();
                     @memcpy(self.cur[0..payload.len], payload);
                     self.cur += payload.len;
-                    self.cur[0] = @intFromEnum(consts.ValueKind.nodeGroupEnd);
+                    self.cur[0] = @backingInt(consts.ValueKind.nodeGroupEnd);
                     self.cur += 1;
                 } else {
                     self.cur = append(self.cur, value);

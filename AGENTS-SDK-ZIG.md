@@ -30,8 +30,8 @@ implementation detail even when a file is technically importable by path.
 
 ## Install and wiring
 
-Requires **Zig 0.16** (`minimum_zig_version` in `build.zig.zon`). The code targets
-0.16 std APIs (`std.process.Init`, `std.Io`, `std.Io.Writer.Allocating`,
+Requires **Zig 0.17** (`minimum_zig_version` in `build.zig.zon`). The code targets
+0.17 std APIs (`std.process.Init`, `std.Io`, `std.Io.Writer.Allocating`,
 `std.ArrayList.empty`) and will not compile on 0.14.
 
 ```shell

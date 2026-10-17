@@ -678,7 +678,7 @@ pub const Renderer = struct {
             return off + 1;
         }
         const n = @sizeOf(T);
-        const raw = std.mem.readInt(std.meta.Int(.unsigned, @bitSizeOf(T)), payload[off..][0..n], .little);
+        const raw = std.mem.readInt(@Int(.unsigned, @bitSizeOf(T)), payload[off..][0..n], .little);
         const v: T = @bitCast(raw);
         switch (T) {
             i8, i16, i32, i64 => try appendInt(self.allocator, dst, @intCast(v)),
@@ -884,7 +884,7 @@ pub const Renderer = struct {
             return off + 1;
         }
         const n = @sizeOf(T);
-        const raw = std.mem.readInt(std.meta.Int(.unsigned, @bitSizeOf(T)), payload[off..][0..n], .little);
+        const raw = std.mem.readInt(@Int(.unsigned, @bitSizeOf(T)), payload[off..][0..n], .little);
         const v: T = @bitCast(raw);
         switch (T) {
             i8, i16, i32, i64 => try appendInt(self.allocator, dst, @intCast(v)),
@@ -1313,7 +1313,7 @@ test "compact json context: message only" {
     const a = testing.allocator;
     var pb = viewer.PB{};
     defer pb.deinit(a);
-    try pb.header(a, 0, @intFromEnum(consts.logLevel.info));
+    try pb.header(a, 0, @backingInt(consts.logLevel.info));
     try pb.msg(a, "just a message");
 
     var out: std.ArrayList(u8) = .empty;
@@ -1326,7 +1326,7 @@ test "compact json context: three flat keys" {
     const a = testing.allocator;
     var pb = viewer.PB{};
     defer pb.deinit(a);
-    try pb.header(a, 0, @intFromEnum(consts.logLevel.info));
+    try pb.header(a, 0, @backingInt(consts.logLevel.info));
     try pb.msg(a, "a message with the short flat context");
     try pb.key(a, .int64, "int");
     try pb.le(a, u64, @bitCast(@as(i64, 4)));
@@ -1348,7 +1348,7 @@ test "fourth key switches compact json to tree" {
     const a = testing.allocator;
     var pb = viewer.PB{};
     defer pb.deinit(a);
-    try pb.header(a, 0, @intFromEnum(consts.logLevel.info));
+    try pb.header(a, 0, @backingInt(consts.logLevel.info));
     try pb.msg(a, "m");
     try pb.key(a, .int64, "a");
     try pb.le(a, u64, 1);
@@ -1376,7 +1376,7 @@ test "tree golden: slices" {
     const a = testing.allocator;
     var pb = viewer.PB{};
     defer pb.deinit(a);
-    try pb.header(a, 0, @intFromEnum(consts.logLevel.info));
+    try pb.header(a, 0, @backingInt(consts.logLevel.info));
     try pb.msg(a, "a message with loads of slices");
 
     try pb.key(a, .sliceBool, "bool");
@@ -1429,27 +1429,27 @@ test "tree golden: empty and nested groups" {
     const a = testing.allocator;
     var pb = viewer.PB{};
     defer pb.deinit(a);
-    try pb.header(a, 0, @intFromEnum(consts.logLevel.info));
+    try pb.header(a, 0, @backingInt(consts.logLevel.info));
     try pb.msg(a, "a message and a group");
 
     try pb.key(a, .nodeGroup, "empty");
-    try pb.byte(a, @intFromEnum(consts.ValueKind.nodeGroupEnd));
+    try pb.byte(a, @backingInt(consts.ValueKind.nodeGroupEnd));
 
     try pb.key(a, .nodeGroup, "group");
     try pb.key(a, .int64, "int");
     try pb.le(a, u64, @bitCast(@as(i64, 4)));
     try pb.strField(a, "string", "Hello World!");
-    try pb.byte(a, @intFromEnum(consts.ValueKind.nodeGroupEnd));
+    try pb.byte(a, @backingInt(consts.ValueKind.nodeGroupEnd));
 
     try pb.key(a, .nodeGroup, "outer");
     try pb.key(a, .nodeGroup, "inner");
     try pb.key(a, .int64, "int1");
     try pb.le(a, u64, @bitCast(@as(i64, 5)));
     try pb.strField(a, "string1", "I'm here");
-    try pb.byte(a, @intFromEnum(consts.ValueKind.nodeGroupEnd));
+    try pb.byte(a, @backingInt(consts.ValueKind.nodeGroupEnd));
     try pb.key(a, .int64, "int");
     try pb.le(a, u64, @bitCast(@as(i64, 4)));
-    try pb.byte(a, @intFromEnum(consts.ValueKind.nodeGroupEnd));
+    try pb.byte(a, @backingInt(consts.ValueKind.nodeGroupEnd));
 
     var out: std.ArrayList(u8) = .empty;
     defer out.deinit(a);
@@ -1473,7 +1473,7 @@ test "compact json context: bytes are base64" {
     const a = testing.allocator;
     var pb = viewer.PB{};
     defer pb.deinit(a);
-    try pb.header(a, 0, @intFromEnum(consts.logLevel.info));
+    try pb.header(a, 0, @backingInt(consts.logLevel.info));
     try pb.msg(a, "a message with bytes field");
     try pb.key(a, .sliceUint8, "data");
     try pb.uvarint(a, 3);
@@ -1492,7 +1492,7 @@ test "tree context: bytes are base64" {
     const a = testing.allocator;
     var pb = viewer.PB{};
     defer pb.deinit(a);
-    try pb.header(a, 0, @intFromEnum(consts.logLevel.info));
+    try pb.header(a, 0, @backingInt(consts.logLevel.info));
     try pb.msg(a, "a message with bytes field");
     try pb.key(a, .sliceUint8, "data");
     try pb.uvarint(a, 3);
@@ -1527,7 +1527,7 @@ test "json escape delegates to the jsonescape module" {
         "nothing to escape",
         "quote\" backslash\\ \x01\x7f\t\n\r\x08\x0c",
         "unicode \u{1F600} \u{0416}",
-        "long " ** 200,
+        @as([]const u8, @ptrCast(&@as([200][5]u8, @splat("long ".*)))),
     };
 
     var r: Renderer = undefined;
@@ -1556,7 +1556,7 @@ test "compact json keys are colored like tree keys" {
     const a = testing.allocator;
     var pb = viewer.PB{};
     defer pb.deinit(a);
-    try pb.header(a, 0, @intFromEnum(consts.logLevel.info));
+    try pb.header(a, 0, @backingInt(consts.logLevel.info));
     try pb.msg(a, "m");
     try pb.strField(a, "k", "v");
 
@@ -1588,13 +1588,13 @@ test "compact json error stage keys are colored like tree keys" {
     const a = testing.allocator;
     var pb = viewer.PB{};
     defer pb.deinit(a);
-    try pb.header(a, 0, @intFromEnum(consts.logLevel.err));
+    try pb.header(a, 0, @backingInt(consts.logLevel.err));
     try pb.msg(a, "errors");
 
     try pb.key(a, .nodeError, "boom");
     try pb.key(a, .nodeNew, "wrapped");
-    try pb.byte(a, @intFromEnum(consts.ValueKind.nodeGroupEnd));
-    try pb.byte(a, @intFromEnum(consts.ValueKind.nodeGroupEnd));
+    try pb.byte(a, @backingInt(consts.ValueKind.nodeGroupEnd));
+    try pb.byte(a, @backingInt(consts.ValueKind.nodeGroupEnd));
 
     var rec = viewer.ParsedRecord{};
     defer rec.deinit(a);
@@ -1626,7 +1626,7 @@ test "tree context: error bookkeeping" {
     const a = testing.allocator;
     var pb = viewer.PB{};
     defer pb.deinit(a);
-    try pb.header(a, 0, @intFromEnum(consts.logLevel.err));
+    try pb.header(a, 0, @backingInt(consts.logLevel.err));
     try pb.msg(a, "errors");
 
     try pb.key(a, .nodeError, "err-beer");
@@ -1634,8 +1634,8 @@ test "tree context: error bookkeeping" {
     try pb.key(a, .nodeLocation, "@location");
     try pb.uvarint(a, 331);
     try pb.strField(a, "new-string", "Hello World!");
-    try pb.byte(a, @intFromEnum(consts.ValueKind.nodeGroupEnd));
-    try pb.byte(a, @intFromEnum(consts.ValueKind.nodeGroupEnd));
+    try pb.byte(a, @backingInt(consts.ValueKind.nodeGroupEnd));
+    try pb.byte(a, @backingInt(consts.ValueKind.nodeGroupEnd));
 
     var out: std.ArrayList(u8) = .empty;
     defer out.deinit(a);
@@ -1656,7 +1656,7 @@ test "compact json context: inline error form" {
     const a = testing.allocator;
     var pb = viewer.PB{};
     defer pb.deinit(a);
-    try pb.header(a, 0, @intFromEnum(consts.logLevel.err));
+    try pb.header(a, 0, @backingInt(consts.logLevel.err));
     try pb.msg(a, "errors");
 
     try pb.key(a, .nodeError, "err-beer");
@@ -1664,8 +1664,8 @@ test "compact json context: inline error form" {
     try pb.key(a, .nodeLocation, "@location");
     try pb.uvarint(a, 331);
     try pb.strField(a, "new-string", "Hello World!");
-    try pb.byte(a, @intFromEnum(consts.ValueKind.nodeGroupEnd));
-    try pb.byte(a, @intFromEnum(consts.ValueKind.nodeGroupEnd));
+    try pb.byte(a, @backingInt(consts.ValueKind.nodeGroupEnd));
+    try pb.byte(a, @backingInt(consts.ValueKind.nodeGroupEnd));
 
     var out: std.ArrayList(u8) = .empty;
     defer out.deinit(a);
@@ -1684,7 +1684,7 @@ test "compact json context: slices" {
     const a = testing.allocator;
     var pb = viewer.PB{};
     defer pb.deinit(a);
-    try pb.header(a, 0, @intFromEnum(consts.logLevel.info));
+    try pb.header(a, 0, @backingInt(consts.logLevel.info));
     try pb.msg(a, "slices");
 
     try pb.key(a, .sliceBool, "bools");
@@ -1717,15 +1717,15 @@ test "location value always renders the @location label" {
     const a = testing.allocator;
     var pb = viewer.PB{};
     defer pb.deinit(a);
-    try pb.header(a, 0, @intFromEnum(consts.logLevel.err));
+    try pb.header(a, 0, @backingInt(consts.logLevel.err));
     try pb.msg(a, "errors");
 
     try pb.key(a, .nodeError, "boom");
     try pb.key(a, .nodeNew, "error");
     try pb.key(a, .nodeLocation, "/tmp/foo.go");
     try pb.uvarint(a, 42);
-    try pb.byte(a, @intFromEnum(consts.ValueKind.nodeGroupEnd));
-    try pb.byte(a, @intFromEnum(consts.ValueKind.nodeGroupEnd));
+    try pb.byte(a, @backingInt(consts.ValueKind.nodeGroupEnd));
+    try pb.byte(a, @backingInt(consts.ValueKind.nodeGroupEnd));
 
     // Rust `Node::key_as_slice` returns `@location` for error locations, so the
     // parsed file name never reaches the output.
@@ -1745,10 +1745,10 @@ test "location header renders as (file:line) in both context forms" {
 
     var pb = viewer.PB{};
     defer pb.deinit(a);
-    try pb.headerLoc(a, 0, @intFromEnum(consts.logLevel.warning), "/tmp/app.go", 99);
+    try pb.headerLoc(a, 0, @backingInt(consts.logLevel.warning), "/tmp/app.go", 99);
     try pb.msg(a, "m");
     try pb.key(a, .nodeGroup, "g");
-    try pb.byte(a, @intFromEnum(consts.ValueKind.nodeGroupEnd));
+    try pb.byte(a, @backingInt(consts.ValueKind.nodeGroupEnd));
 
     var out: std.ArrayList(u8) = .empty;
     defer out.deinit(a);
@@ -1761,7 +1761,7 @@ test "location header renders as (file:line) in both context forms" {
 
     var pb2 = viewer.PB{};
     defer pb2.deinit(a);
-    try pb2.headerLoc(a, 0, @intFromEnum(consts.logLevel.warning), "/tmp/app.go", 99);
+    try pb2.headerLoc(a, 0, @backingInt(consts.logLevel.warning), "/tmp/app.go", 99);
     try pb2.msg(a, "m");
 
     var json: std.ArrayList(u8) = .empty;
@@ -1779,7 +1779,7 @@ pub const ERRORS_FILE = "/home/emacs/Sources/mine/blog/internal/alchemy/alchemy_
 /// numbering). Covers `errorRaw`, nested `nodeError` stages with locations,
 /// a foreign-error-text child and an `nodeErrorEmbed`.
 pub fn buildErrorsFixture(a: std.mem.Allocator, pb: *viewer.PB) !void {
-    try pb.header(a, ERRORS_TIME, @intFromEnum(consts.logLevel.err));
+    try pb.header(a, ERRORS_TIME, @backingInt(consts.logLevel.err));
     try pb.msg(a, "errors");
 
     try pb.key(a, .errorRaw, "err-foreign");
@@ -1791,20 +1791,20 @@ pub fn buildErrorsFixture(a: std.mem.Allocator, pb: *viewer.PB) !void {
     try pb.key(a, .nodeLocation, ERRORS_FILE);
     try pb.uvarint(a, 331);
     try pb.strField(a, "new-string", "Hello World!");
-    try pb.byte(a, @intFromEnum(consts.ValueKind.nodeGroupEnd));
+    try pb.byte(a, @backingInt(consts.ValueKind.nodeGroupEnd));
     try pb.key(a, .nodeWrap, "wrap");
     try pb.key(a, .nodeLocation, ERRORS_FILE);
     try pb.uvarint(a, 332);
     try pb.key(a, .int64, "wrap-int");
     try pb.le(a, u64, 1);
-    try pb.byte(a, @intFromEnum(consts.ValueKind.nodeGroupEnd));
-    try pb.byte(a, @intFromEnum(consts.ValueKind.nodeContext));
+    try pb.byte(a, @backingInt(consts.ValueKind.nodeGroupEnd));
+    try pb.byte(a, @backingInt(consts.ValueKind.nodeContext));
     try pb.key(a, .nodeLocation, ERRORS_FILE);
     try pb.uvarint(a, 333);
     try pb.key(a, .float64, "just-pi");
     try pb.le(a, u64, @bitCast(@as(f64, 3.141592653589793)));
-    try pb.byte(a, @intFromEnum(consts.ValueKind.nodeGroupEnd));
-    try pb.byte(a, @intFromEnum(consts.ValueKind.nodeGroupEnd));
+    try pb.byte(a, @backingInt(consts.ValueKind.nodeGroupEnd));
+    try pb.byte(a, @backingInt(consts.ValueKind.nodeGroupEnd));
 
     try pb.key(a, .nodeError, "err-foreign-root");
     try pb.key(a, .nodeForeignErrorText, "EOF");
@@ -1813,8 +1813,8 @@ pub fn buildErrorsFixture(a: std.mem.Allocator, pb: *viewer.PB) !void {
     try pb.uvarint(a, 335);
     try pb.key(a, .bool, "wrap-bool");
     try pb.byte(a, 1);
-    try pb.byte(a, @intFromEnum(consts.ValueKind.nodeGroupEnd));
-    try pb.byte(a, @intFromEnum(consts.ValueKind.nodeGroupEnd));
+    try pb.byte(a, @backingInt(consts.ValueKind.nodeGroupEnd));
+    try pb.byte(a, @backingInt(consts.ValueKind.nodeGroupEnd));
 
     try pb.key(a, .nodeErrorEmbed, "err-intermixed");
     const embed = "foreign wrap: error";
@@ -1825,8 +1825,8 @@ pub fn buildErrorsFixture(a: std.mem.Allocator, pb: *viewer.PB) !void {
     try pb.uvarint(a, 337);
     try pb.key(a, .time, "new-time");
     try pb.le(a, u64, ERRORS_TIME);
-    try pb.byte(a, @intFromEnum(consts.ValueKind.nodeGroupEnd));
-    try pb.byte(a, @intFromEnum(consts.ValueKind.nodeGroupEnd));
+    try pb.byte(a, @backingInt(consts.ValueKind.nodeGroupEnd));
+    try pb.byte(a, @backingInt(consts.ValueKind.nodeGroupEnd));
 }
 
 /// New-wire-format port of `blog-rs/src/testdata/panic.bin`: a PANIC record
@@ -1834,7 +1834,7 @@ pub fn buildErrorsFixture(a: std.mem.Allocator, pb: *viewer.PB) !void {
 pub fn buildPanicFixture(a: std.mem.Allocator, pb: *viewer.PB) !void {
     const gz = try gzipAlloc(a, PANIC_STACK);
     defer a.free(gz);
-    try pb.header(a, PANIC_TIME, @intFromEnum(consts.logLevel.panic));
+    try pb.header(a, PANIC_TIME, @backingInt(consts.logLevel.panic));
     try pb.msg(a, gz);
     try pb.strField(a, "recovered", "this is a panic");
 }
@@ -1963,7 +1963,7 @@ test "panic body falls back to the decode error name" {
 
     var pb = viewer.PB{};
     defer pb.deinit(a);
-    try pb.header(a, PANIC_TIME, @intFromEnum(consts.logLevel.panic));
+    try pb.header(a, PANIC_TIME, @backingInt(consts.logLevel.panic));
     try pb.msg(a, "not a gzip stream");
 
     var out: std.ArrayList(u8) = .empty;

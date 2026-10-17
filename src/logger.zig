@@ -131,9 +131,9 @@ pub fn Logger(comptime Pool: type, comptime Sink: type) type {
 
             var frame: LogFrame = undefined;
             frame.init(buf.ptr);
-            const attrs_info = @typeInfo(@TypeOf(attrs));
-            inline for (attrs_info.@"struct".fields) |field| {
-                frame.appendField(field.name, @field(attrs, field.name));
+            const attrs_info = @typeInfo(@TypeOf(attrs)).@"struct";
+            inline for (attrs_info.field_names, attrs_info.field_types) |name, _| {
+                frame.appendField(name, @field(attrs, name));
             }
 
             return .{
@@ -191,7 +191,7 @@ pub fn Logger(comptime Pool: type, comptime Sink: type) type {
             pos += 2;
             std.mem.writeInt(u64, buf[pos..][0..8], timestamp, .little);
             pos += 8;
-            buf[pos] = @intFromEnum(level);
+            buf[pos] = @backingInt(level);
             pos += 1;
             buf[pos] = 0; // location placeholder
             pos += 1;
@@ -207,9 +207,9 @@ pub fn Logger(comptime Pool: type, comptime Sink: type) type {
             }
 
             var frame = LogFrame{ .cur = cur };
-            const attrs_info = @typeInfo(@TypeOf(attrs));
-            inline for (attrs_info.@"struct".fields) |field| {
-                frame.appendField(field.name, @field(attrs, field.name));
+            const attrs_info = @typeInfo(@TypeOf(attrs)).@"struct";
+            inline for (attrs_info.field_names, attrs_info.field_types) |name, _| {
+                frame.appendField(name, @field(attrs, name));
             }
             std.debug.assert(@intFromPtr(frame.cur) - @intFromPtr(buf.ptr) == total);
 
@@ -230,13 +230,12 @@ pub fn Logger(comptime Pool: type, comptime Sink: type) type {
         /// nested context groups too. Not `inline`: the recursion must be
         /// monomorphized per attribute type.
         fn consumeDiagnostics(self: *Self, attrs: anytype) void {
-            const attrs_info = @typeInfo(@TypeOf(attrs));
-            inline for (attrs_info.@"struct".fields) |field| {
-                const T = field.type;
+            const attrs_info = @typeInfo(@TypeOf(attrs)).@"struct";
+            inline for (attrs_info.field_names, attrs_info.field_types) |name, T| {
                 if (comptime encoding.isDiagPtr(T)) {
-                    @field(attrs, field.name).consume();
+                    @field(attrs, name).consume();
                 } else if (comptime @typeInfo(T) == .@"struct") {
-                    self.consumeDiagnostics(@field(attrs, field.name));
+                    self.consumeDiagnostics(@field(attrs, name));
                 }
             }
         }
@@ -252,9 +251,9 @@ pub fn Logger(comptime Pool: type, comptime Sink: type) type {
 fn hasDiagnostics(comptime T: type) bool {
     const info = @typeInfo(T);
     if (info != .@"struct") return false;
-    inline for (info.@"struct".fields) |field| {
-        if (comptime encoding.isDiagPtr(field.type)) return true;
-        if (comptime hasDiagnostics(field.type)) return true;
+    inline for (info.@"struct".field_types) |FieldType| {
+        if (comptime encoding.isDiagPtr(FieldType)) return true;
+        if (comptime hasDiagnostics(FieldType)) return true;
     }
     return false;
 }
@@ -356,7 +355,7 @@ test "with prefix is encoded, then returned to the pool on deinit" {
     try expectEqualSlices(u8, "started", p[0..@intCast(msg_len)]);
     p += msg_len;
 
-    try expectEqual(@intFromEnum(consts.ValueKind.string), p[0]);
+    try expectEqual(@backingInt(consts.ValueKind.string), p[0]);
     var name_len: u64 = 0;
     p = try decoding.decodeVarint(&name_len, p + 1);
     try expectEqualSlices(u8, "job", p[0..@intCast(name_len)]);
@@ -422,7 +421,7 @@ test "drop accounting when the pool is out of memory" {
     logger.init(&pool, &sink);
 
     // Longer than the frame, so `get` falls back to the heap, which fails.
-    const big = "x" ** 4096;
+    const big: []const u8 = &@as([4096]u8, @splat('x'));
     logger.warn(big, .{});
 
     try expectEqual(@as(u64, 1), logger.dropped.load(.monotonic));

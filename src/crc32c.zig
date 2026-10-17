@@ -5,7 +5,7 @@ const builtin = @import("builtin");
 pub fn hardwareCrc32C(data: []const u8) u32 {
     // Включаем ассемблер ТОЛЬКО в режиме ReleaseFast под x86_64,
     // чтобы обойти баг компилятора Zig с обработкой MIR в Debug/ReleaseSafe.
-    const is_x86_fast = builtin.target.cpu.arch == .x86_64 and builtin.mode == .ReleaseFast;
+    const is_x86_fast = builtin.target.cpu.arch == .x86_64 and builtin.mode == .fast;
 
     // На ARM64 компилятор обрабатывает MIR отлично в любом режиме сборки
     const is_arm = builtin.target.cpu.arch == .aarch64;
@@ -15,8 +15,7 @@ pub fn hardwareCrc32C(data: []const u8) u32 {
         var crc64: u64 = 0xFFFFFFFF;
         while (i + 8 <= data.len) : (i += 8) {
             const val = std.mem.readInt(u64, data[i..][0..8], .native);
-            asm (
-                "crc32q %[val], %[crc]"
+            asm ("crc32q %[val], %[crc]"
                 : [crc] "+r" (crc64),
                 : [val] "rm" (val),
             );
@@ -25,42 +24,35 @@ pub fn hardwareCrc32C(data: []const u8) u32 {
         var crc32: u32 = @truncate(crc64);
         while (i < data.len) : (i += 1) {
             const val = data[i];
-            asm (
-                "crc32b %[val], %[crc]"
+            asm ("crc32b %[val], %[crc]"
                 : [crc] "+r" (crc32),
                 : [val] "rm" (val),
             );
         }
         return crc32 ^ 0xFFFFFFFF;
-
     } else if (is_arm) {
         var i: usize = 0;
         var crc: u32 = 0xFFFFFFFF;
         while (i + 8 <= data.len) : (i += 8) {
             const val = std.mem.readInt(u64, data[i..][0..8], .native);
-            asm (
-                "crc32cx %[crc], %[crc], %[val]"
+            asm ("crc32cx %[crc], %[crc], %[val]"
                 : [crc] "+r" (crc),
                 : [val] "r" (val),
             );
         }
         while (i < data.len) : (i += 1) {
             const val: u32 = data[i];
-            asm (
-                "crc32cb %[crc], %[crc], %[val]"
+            asm ("crc32cb %[crc], %[crc], %[val]"
                 : [crc] "+r" (crc),
                 : [val] "r" (val),
             );
         }
         return crc ^ 0xFFFFFFFF;
-
     } else {
         // Безопасный фоллбек для x86_64 (в Debug/ReleaseSafe) и остальных архитектур
-        return std.hash.crc.Crc32Iscsi.hash(data);
+        return std.hash.crc.@"CRC-32/ISCSI".hash(data);
     }
 }
-
-
 
 test "crc32 Castagnoli hardware with the fallback for unsupported arches" {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);

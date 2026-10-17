@@ -265,12 +265,12 @@ pub const Out = struct {
 /// level, or the quoted `"UNKNOWN(<n>)"` fallback (plan D2/§4.2).
 fn writeLevel(out: *Out, level: u8) ParseError!void {
     const literal: ?[]const u8 = switch (level) {
-        @intFromEnum(consts.logLevel.trace) => json.level_trace,
-        @intFromEnum(consts.logLevel.debug) => json.level_debug,
-        @intFromEnum(consts.logLevel.info) => json.level_info,
-        @intFromEnum(consts.logLevel.warning) => json.level_warn,
-        @intFromEnum(consts.logLevel.err) => json.level_error,
-        @intFromEnum(consts.logLevel.panic) => json.level_panic,
+        @backingInt(consts.logLevel.trace) => json.level_trace,
+        @backingInt(consts.logLevel.debug) => json.level_debug,
+        @backingInt(consts.logLevel.info) => json.level_info,
+        @backingInt(consts.logLevel.warning) => json.level_warn,
+        @backingInt(consts.logLevel.err) => json.level_error,
+        @backingInt(consts.logLevel.panic) => json.level_panic,
         else => null,
     };
     if (literal) |lit| return out.raw(lit);
@@ -612,7 +612,7 @@ pub fn renderRecord(out: *Out, ctx: *Ctx, payload: []const u8) ParseError!void {
 
     const msg_len = try in.uvarint();
     const msg = try in.take(@intCast(msg_len));
-    if (level == @intFromEnum(consts.logLevel.panic)) {
+    if (level == @backingInt(consts.logLevel.panic)) {
         try out.raw(json.stacktrace);
         try out.byte(':');
         // Raw gunzipped stacktrace, appended unescaped and unquoted (D5).
@@ -774,7 +774,7 @@ test "growth releases the old buffer to the pool" {
     // Both frames: one is the output, the other becomes the grown buffer.
     var out = Out{ .pool = &pool, .buf = try pool.get(64) };
     const small = out.buf;
-    try out.raw("x" ** 200);
+    try out.raw(&@as([200]u8, @splat('x')));
     try expect(out.buf.ptr != small.ptr);
 
     // `small` was returned; the next frame-sized get must hand it back.
@@ -825,7 +825,7 @@ test "header golden: message only" {
 
     var pb = viewer.PB{};
     defer pb.deinit(a);
-    try pb.header(a, 1_773_974_798_041_168_000, @intFromEnum(consts.logLevel.info));
+    try pb.header(a, 1_773_974_798_041_168_000, @backingInt(consts.logLevel.info));
     try pb.msg(a, "just a message");
 
     const got = try renderTest(&pool, pb.list.items);
@@ -845,7 +845,7 @@ test "header golden: location and context" {
 
     var pb = viewer.PB{};
     defer pb.deinit(a);
-    try pb.headerLoc(a, 1_773_974_798_041_168_001, @intFromEnum(consts.logLevel.debug), "src/main.zig", 42);
+    try pb.headerLoc(a, 1_773_974_798_041_168_001, @backingInt(consts.logLevel.debug), "src/main.zig", 42);
     try pb.msg(a, "ctx");
     try pb.key(a, .int64, "int");
     try pb.le(a, u64, @bitCast(@as(i64, 4)));
@@ -905,7 +905,7 @@ test "header golden: empty context has no trailing comma" {
 
     var pb = viewer.PB{};
     defer pb.deinit(a);
-    try pb.header(a, 0, @intFromEnum(consts.logLevel.info));
+    try pb.header(a, 0, @backingInt(consts.logLevel.info));
     try pb.msg(a, "");
 
     const got = try renderTest(&pool, pb.list.items);
@@ -921,7 +921,7 @@ test "scalar goldens: every integer width and the extremes" {
 
     var pb = viewer.PB{};
     defer pb.deinit(a);
-    try pb.header(a, 0, @intFromEnum(consts.logLevel.info));
+    try pb.header(a, 0, @backingInt(consts.logLevel.info));
     try pb.msg(a, "m");
 
     try pb.key(a, .int8, "i8");
@@ -965,7 +965,7 @@ test "scalar goldens: bool, floats, time and duration" {
 
     var pb = viewer.PB{};
     defer pb.deinit(a);
-    try pb.header(a, 0, @intFromEnum(consts.logLevel.info));
+    try pb.header(a, 0, @backingInt(consts.logLevel.info));
     try pb.msg(a, "m");
 
     try pb.key(a, .bool, "b");
@@ -1004,7 +1004,7 @@ test "slices: compact, empty, strings, floats and base64" {
 
     var pb = viewer.PB{};
     defer pb.deinit(a);
-    try pb.header(a, 0, @intFromEnum(consts.logLevel.info));
+    try pb.header(a, 0, @backingInt(consts.logLevel.info));
     try pb.msg(a, "slices");
 
     try pb.key(a, .sliceBool, "bools");
@@ -1056,7 +1056,7 @@ test "escaping: control chars, quotes and backslashes round-trip" {
 
     var pb = viewer.PB{};
     defer pb.deinit(a);
-    try pb.header(a, 0, @intFromEnum(consts.logLevel.info));
+    try pb.header(a, 0, @backingInt(consts.logLevel.info));
     try pb.msg(a, "m");
     try pb.strField(a, "s", "a\tb\n\"c\"\\\x01");
 
@@ -1077,9 +1077,9 @@ test "predefined key code 0 renders INVALID while other codes drop" {
 
     var pb = viewer.PB{};
     defer pb.deinit(a);
-    try pb.header(a, 0, @intFromEnum(consts.logLevel.info));
+    try pb.header(a, 0, @backingInt(consts.logLevel.info));
     try pb.msg(a, "m");
-    try pb.byte(a, @intFromEnum(consts.ValueKind.uint64));
+    try pb.byte(a, @backingInt(consts.ValueKind.uint64));
     try pb.byte(a, 0); // predefined key form
     try pb.uvarint(a, 0); // code 0 -> "INVALID"
     try pb.le(a, u64, 7);
@@ -1094,9 +1094,9 @@ test "predefined key code 0 renders INVALID while other codes drop" {
 
     var bad = viewer.PB{};
     defer bad.deinit(a);
-    try bad.header(a, 0, @intFromEnum(consts.logLevel.info));
+    try bad.header(a, 0, @backingInt(consts.logLevel.info));
     try bad.msg(a, "m");
-    try bad.byte(a, @intFromEnum(consts.ValueKind.uint64));
+    try bad.byte(a, @backingInt(consts.ValueKind.uint64));
     try bad.byte(a, 0);
     try bad.uvarint(a, 9); // unknown predefined code
     try bad.le(a, u64, 7);
@@ -1134,7 +1134,7 @@ test "unknown version and unknown kind drop cleanly" {
 
     var pb2 = viewer.PB{};
     defer pb2.deinit(a);
-    try pb2.header(a, 0, @intFromEnum(consts.logLevel.info));
+    try pb2.header(a, 0, @backingInt(consts.logLevel.info));
     try pb2.msg(a, "m");
     try pb2.byte(a, 200); // not a valid ValueKind
 
@@ -1155,20 +1155,20 @@ test "groups: inline, nested and empty" {
 
     var pb = viewer.PB{};
     defer pb.deinit(a);
-    try pb.header(a, 0, @intFromEnum(consts.logLevel.info));
+    try pb.header(a, 0, @backingInt(consts.logLevel.info));
     try pb.msg(a, "groups");
     try pb.key(a, .nodeGroup, "g");
     try pb.key(a, .int64, "x");
     try pb.le(a, i64, 1);
-    try pb.byte(a, @intFromEnum(consts.ValueKind.nodeGroupEnd));
+    try pb.byte(a, @backingInt(consts.ValueKind.nodeGroupEnd));
     try pb.key(a, .nodeGroup, "outer");
     try pb.key(a, .nodeGroup, "inner");
     try pb.key(a, .bool, "b");
     try pb.byte(a, 1);
-    try pb.byte(a, @intFromEnum(consts.ValueKind.nodeGroupEnd));
-    try pb.byte(a, @intFromEnum(consts.ValueKind.nodeGroupEnd));
+    try pb.byte(a, @backingInt(consts.ValueKind.nodeGroupEnd));
+    try pb.byte(a, @backingInt(consts.ValueKind.nodeGroupEnd));
     try pb.key(a, .nodeGroup, "empty");
-    try pb.byte(a, @intFromEnum(consts.ValueKind.nodeGroupEnd));
+    try pb.byte(a, @backingInt(consts.ValueKind.nodeGroupEnd));
 
     const got = try renderTest(&pool, pb.list.items);
     defer _ = pool.put(@constCast(got));
@@ -1188,15 +1188,15 @@ test "errors golden: inline error form" {
 
     var pb = viewer.PB{};
     defer pb.deinit(a);
-    try pb.header(a, 0, @intFromEnum(consts.logLevel.err));
+    try pb.header(a, 0, @backingInt(consts.logLevel.err));
     try pb.msg(a, "errors");
     try pb.key(a, .nodeError, "err-beer");
     try pb.key(a, .nodeNew, "error");
     try pb.key(a, .nodeLocation, "@location");
     try pb.uvarint(a, 331);
     try pb.strField(a, "new-string", "Hello World!");
-    try pb.byte(a, @intFromEnum(consts.ValueKind.nodeGroupEnd));
-    try pb.byte(a, @intFromEnum(consts.ValueKind.nodeGroupEnd));
+    try pb.byte(a, @backingInt(consts.ValueKind.nodeGroupEnd));
+    try pb.byte(a, @backingInt(consts.ValueKind.nodeGroupEnd));
 
     const got = try renderTest(&pool, pb.list.items);
     defer _ = pool.put(@constCast(got));
@@ -1245,7 +1245,7 @@ test "errors: embed text wins over fragment join" {
 
     var pb = viewer.PB{};
     defer pb.deinit(a);
-    try pb.header(a, 0, @intFromEnum(consts.logLevel.err));
+    try pb.header(a, 0, @backingInt(consts.logLevel.err));
     try pb.msg(a, "m");
     try pb.key(a, .nodeErrorEmbed, "err-embed");
     const embed = "foreign wrap: error";
@@ -1254,8 +1254,8 @@ test "errors: embed text wins over fragment join" {
     try pb.key(a, .nodeWrap, "wrap foreign");
     try pb.key(a, .nodeLocation, "@location");
     try pb.uvarint(a, 331);
-    try pb.byte(a, @intFromEnum(consts.ValueKind.nodeGroupEnd));
-    try pb.byte(a, @intFromEnum(consts.ValueKind.nodeGroupEnd));
+    try pb.byte(a, @backingInt(consts.ValueKind.nodeGroupEnd));
+    try pb.byte(a, @backingInt(consts.ValueKind.nodeGroupEnd));
 
     const got = try renderTest(&pool, pb.list.items);
     defer _ = pool.put(@constCast(got));
@@ -1296,7 +1296,7 @@ test "panic: gzip decode failure appends the error name" {
 
     var pb = viewer.PB{};
     defer pb.deinit(a);
-    try pb.header(a, 0, @intFromEnum(consts.logLevel.panic));
+    try pb.header(a, 0, @backingInt(consts.logLevel.panic));
     try pb.msg(a, "not a gzip stream");
 
     const got = try renderTest(&pool, pb.list.items);

@@ -1,10 +1,12 @@
 # json_escape public API
 
-`json_escape` is a single-module Zig 0.16 library (`build.zig` declares an
-`addModule("json_escape", ...)` rooted at `src/json_escape.zig`). Import it as:
+`json_escape` is a single-module Zig 0.17 library (`build.zig` declares an
+`addModule("jsonescape", ...)` rooted at `src/json_escape.zig`). It is consumed
+as the `jsonescape` dependency fetched from
+`github.com/sirkon/jsonescape`, pinned in `build.zig.zon`.
 
 ```zig
-const json_escape = @import("json_escape");
+const json_escape = @import("jsonescape");
 ```
 
 It produces JSON escaped bytes: bytes `< 0x20` become `\u00xx` (or the short forms
@@ -39,7 +41,7 @@ Allocating, the simplest entry point:
 
 ```zig
 const std = @import("std");
-const json_escape = @import("json_escape");
+const json_escape = @import("jsonescape");
 
 const allocator = std.heap.page_allocator;
 const escaped = try json_escape.escape(allocator, "tab\there\n");
