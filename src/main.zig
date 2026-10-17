@@ -43,11 +43,16 @@ test "test output" {
 
     var pool: blog.BufferPool = undefined;
     try pool.init(std.testing.allocator, 4096, 4096);
+    defer pool.deinit();
+
     var sink: blog.PrettySink(std.Io.Writer) = undefined;
     sink.init(std.testing.allocator, blog.ColorProfile.plain, &aw.writer);
+    defer sink.deinit();
+
     var logger: blog.Logger(blog.BufferPool, blog.PrettySink(std.Io.Writer)) = undefined;
     logger.init(&pool, &sink);
     defer logger.deinit();
+
     var diag = try logger.err_new("new error", .{ .key11 = 1, .key21 = "Hello!" });
     diag = try diag.wrap("wrap", .{ .key21 = 2, .key22 = "World" });
     diag = try diag.with(.{ .key31 = 3 });
@@ -59,6 +64,12 @@ test "test output" {
     // Need to change time value as it is differs for sure.
     @memcpy(got[0..23], expected[0..23]);
     std.testing.expectEqualSlices(u8, expected, got) catch {
-        std.debug.panic("---Expected:\n{s}\n\n---Actual:\n{s}\n", .{ expected, got });
+        std.debug.panic(
+            \\--- Expected:
+            \\{s}
+            \\
+            \\--- Actual:
+            \\{s}
+        , .{ expected, got });
     };
 }
