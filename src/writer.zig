@@ -39,7 +39,11 @@ const jsonsink = @import("jsonsink.zig");
 pub const BufferPool = buffer_pool.BufferPool(false);
 
 /// Error surfaced by every log sink whenever the downstream write fails.
-pub const WriteError = error{WriteFailed};
+/// We deliberately add RecordTooLarge here for custom sinks/writers to be able to reject
+/// recors that are too large in size. The idea is to avoid using mutexes in logging,
+/// by pushing write tasks via the io_uring. And in case if records are smaller than
+/// 4Kib they are guaranteed not to be spliced by other logging events.
+pub const WriteError = error{ WriteFailed, RecordTooLarge };
 
 /// Comptime contract check for a downstream writer type: it must look like
 ///
