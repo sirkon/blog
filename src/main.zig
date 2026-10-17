@@ -30,11 +30,15 @@ pub fn main(init: std.process.Init) !void {
 
     var logger: blog.Logger(blog.BufferPool, CombinedSink) = undefined;
     logger.init(&pool, &sink);
+    defer logger.deinit();
 
-    var diag = try logger.err_new("new error", .{ .key11 = 1, .key21 = "Hello!" });
-    diag = try diag.wrap("wrap", .{ .key21 = 2, .key22 = "World" });
-    diag = try diag.with(.{ .key31 = 3 });
-    logger.warn("msg", .{ .diag = diag });
+    var with = logger.with(.{ .with = "namespace" });
+    defer with.deinit();
+
+    var diag = try logger.diag_txt("new error", .{ .key11 = 1, .key21 = "Hello!" });
+    try diag.wrap("wrap", .{ .key21 = 2, .key22 = "World" });
+    try diag.with(.{ .key31 = 3 });
+    with.warn("msg", .{ .diag = &diag });
 }
 
 const CombinedSink = struct {
@@ -90,10 +94,10 @@ test "test output" {
     logger.init(&pool, &sink);
     defer logger.deinit();
 
-    var diag = try logger.err_new("new error", .{ .key11 = 1, .key21 = "Hello!" });
-    diag = try diag.wrap("wrap", .{ .key21 = 2, .key22 = "World" });
-    diag = try diag.with(.{ .key31 = 3 });
-    logger.warn("msg", .{ .diag = diag });
+    var diag = try logger.diag_txt("new error", .{ .key11 = 1, .key21 = "Hello!" });
+    try diag.wrap("wrap", .{ .key21 = 2, .key22 = "World" });
+    try diag.with(.{ .key31 = 3 });
+    logger.warn("msg", .{ .diag = &diag });
 
     const got = try aw.toOwnedSlice();
     defer std.testing.allocator.free(got);

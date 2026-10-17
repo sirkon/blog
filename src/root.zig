@@ -48,15 +48,15 @@ pub const logger = @import("logger.zig");
 ///
 ///     var logger: blog.Logger(blog.BufferPool, blog.MemorySink) = undefined;
 ///     logger.init(&pool, &sink);
-///     var diag = try logger.err_after(error.NotFound, .{ .name = file });
-///     diag = try diag.wrap("open config file", .{});
-///     logger.warn("cannot load config", .{ .err = diag });
+///     var diag = try logger.diag_err(error.NotFound, .{ .name = file });
+///     try diag.wrap("open config file", .{});
+///     logger.warn("cannot load config", .{ .err = &diag });
 pub const Logger = logger.Logger;
 
-pub const errors = @import("error.zig");
-/// Rich diagnostics for the logger: a stack-driven, log-once error value with
-/// its stages encoded into the log payload.
-pub const Error = errors.Error;
+pub const diag = @import("diag.zig");
+/// Comptime factory for rich diagnostics over a specific pool type. `Diag(Pool)`
+/// is the type `Logger(Pool, Sink)` hands out.
+pub const Diag = diag.Diag;
 
 pub const viewer = @import("viewer.zig");
 /// Parses a log record payload into a header + node tree for rendering.
@@ -71,7 +71,7 @@ test {
     _ = @import("buffer_pool.zig");
     _ = @import("writer.zig");
     _ = @import("logger.zig");
-    _ = @import("error.zig");
+    _ = @import("diag.zig");
     _ = @import("encoding.zig");
     _ = @import("decoding.zig");
     _ = @import("crc32c.zig");

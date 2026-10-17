@@ -38,9 +38,7 @@ the library from the module cache.
   expectations).
 - `go vet ./...` reports two warnings: `internal/core/attr_serialize.go:24`
   (8-bit shift) and `viewer_pretty_render_tree.go:41` (self-assignment).
-- `zig build test` reports 122/122 tests passing but exits non-zero: the
-  `src/main.zig` test leaks its pool/sink (7 allocations). Owned by
-  `deinit`, not called in that test.
+- `zig build test` passes 122/122 and exits zero.
 
 ## Wire format (the contract both sides must honor)
 
@@ -59,7 +57,7 @@ level   u8        (10 trace, 20 debug, 30 info, 40 warn, 50 err, 60 panic)
 location: 0x00, or uvarint(len(file)) | file | uvarint(line)
 custom  (Go only: Logger.appendCustom, static per fork; empty in this repo)
 msg     uvarint(len) | msg
-prefix  (Go: Logger.With payload; Zig: Logger.With prefix)
+prefix  (Go: Logger.With payload; Zig: Logger.with prefix)
 attrs   (serialized key/value nodes)
 ```
 
@@ -120,9 +118,9 @@ carry that known-key code, which is why `attr_serialize.go` shifts by 8.
 - `logger.zig` - the logger engine, comptime-parameterized over `Pool` and
   `Sink` (`Logger(Pool, Sink)`), record encoding, and host header writes.
   Level methods take a **comptime** `msg`.
-- `error.zig` - `Diag(Pool)` rich diagnostics, the Zig counterpart of Go's
-  `*Error`. Also defines `BufferPool`/`Error` aliases, the terminal
-  `deadPayload` (NULL pointer) and `fault()`.
+- `diag.zig` - `Diag(Pool)` rich diagnostics, the Zig counterpart of Go's
+  `*Error`. Also defines the `BufferPool` alias, the terminal `deadPayload`
+  (NULL pointer) and `fault()`.
 - `writer.zig` - `BufferPool`, sinks (`MemorySink`, `FileSink`, `SyncWriter`,
   `PrettySink`, `JsonSink`, `FdWriter`) and `verifyFrame`. The header comment
   documents the sink ownership contract precisely.
@@ -166,12 +164,12 @@ carry that known-key code, which is why `attr_serialize.go` shifts by 8.
   non-power-of-two `size`, and `frameSize < 512` or non-power-of-two.
 - `deinit` asserts every frame is back in the free list; leaked records
   surface as a test failure.
-- **Diagnostics are never allocator-created** and are terminal once logged:
-  `logger.err_after`/`err_new` (+ `_loc`/`_log` variants) hand out pointers
-  into a fixed `maxLiveDiagnostics = 8` slot array inside the logger. Exceeding
-  it panics. Log each diagnostic exactly once; `logger.deinit()` (and each
-  child's) calls `releaseDiagnostics` to return unlogged ones.
-- A diagnostic passed to `Logger.With` is rejected at comptime
+- **A diagnostic is a value, not a logger-owned slot**: `logger.diag_err` /
+  `diag_txt` (+ `_loc` variants) return a `Diag(Pool)` the caller owns. There is
+  no slot array and no `maxLiveDiagnostics` bound. Log it exactly once (which
+  releases its payload), or `release()` it; an unlogged diagnostic leaks its
+  frame otherwise.
+- A diagnostic passed to `Logger.with` is rejected at comptime
   (`hasDiagnostics`); prefixes are copied per record.
 - `writeRecord` consumes diagnostics *before* entering the sink, and a failed
   or too-large record is dropped (bumping the logger's own `dropped`) rather
@@ -194,7 +192,7 @@ carry that known-key code, which is why `attr_serialize.go` shifts by 8.
   interleaved with `*Error` layers the payload alone can no longer reconstruct
   the message, so `Error()` walks the payload for node text and stitches the
   foreign text back in. This logic is delicate and directly mirrored by
-  `src/error.zig`; change both together.
+  `src/diag.zig`; change both together.
 - `beer.InsertLocationsOn/Off` (default off) toggles `runtime.Caller` capture
   inside `New/Wrap/Just`. It is debug-only and test code turns it off in
   `TestMain`.

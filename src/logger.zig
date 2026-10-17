@@ -2,7 +2,7 @@ const std = @import("std");
 const consts = @import("consts.zig");
 const encoding = @import("encoding.zig");
 const crc32c = @import("crc32c.zig");
-const error_mod = @import("error.zig");
+const diag_mod = @import("diag.zig");
 
 /// A thin cursor over the record payload, shared with the diagnostics encoder.
 const LogFrame = encoding.Frame;
@@ -54,28 +54,23 @@ pub fn Logger(comptime Pool: type, comptime Sink: type) type {
         /// a sink that returned `error.WriteFailed`. A sink that rejects a
         /// record internally counts it in its own `dropped`, if it has one.
         dropped: std.atomic.Value(u64) = .init(0),
-        /// Full allocation backing the `With` prefix, so `put` recovers it.
+        /// Full allocation backing the `with` prefix, so `put` recovers it.
         prefix_alloc: ?[]u8 = null,
-        /// Payload bytes contributed by `With` (a subview of `prefix_alloc`).
+        /// Payload bytes contributed by `with` (a subview of `prefix_alloc`).
         prefix: []const u8 = &.{},
-        /// Stack-driven rich diagnostics started by this logger and not yet
-        /// logged. `err_after`/`err_new` hand out pointers into this array.
-        slots: [error_mod.maxLiveDiagnostics]Error = undefined,
 
-        /// The diagnostic type this logger hands out: never heap-created,
-        /// owned by the logger until it is logged.
-        pub const Error = error_mod.Diag(Pool);
+        /// The diagnostic type this logger hands out. A diagnostic is a plain
+        /// value the caller owns; the logger only lends the pool.
+        pub const Diag = diag_mod.Diag(Pool);
 
         pub fn init(self: *Self, pool: *Pool, sink: *Sink) void {
             self.* = .{
                 .pool = pool,
                 .sink = sink,
-                .slots = error_mod.emptySlots(Pool, pool),
             };
         }
 
         pub fn deinit(self: *Self) void {
-            self.releaseDiagnostics();
             if (self.prefix_alloc) |buf| {
                 self.prefix_alloc = null;
                 self.prefix = &.{};
@@ -86,82 +81,41 @@ pub fn Logger(comptime Pool: type, comptime Sink: type) type {
         // ------------------------------------------------------- diagnostics
 
         /// Starts a rich diagnostic from a Zig error value. Log it exactly once
-        /// with `self` as `.{ .key = diag }`; any other use is a terminal bug.
-        pub fn err_after(self: *Self, err_value: anyerror, ctx: anytype) std.mem.Allocator.Error!*Error {
-            return self.startDiagnostic(err_value, @errorName(err_value), null, ctx);
+        /// as `.{ .key = &diag }`; any other use is a terminal bug.
+        pub fn diag_err(self: *Self, err_value: anyerror, ctx: anytype) std.mem.Allocator.Error!Diag {
+            return Diag.start(self.pool, err_value, @errorName(err_value), null, ctx);
         }
 
         /// Starts a spec-less diagnostic: a pure invariant violation without a
         /// certain code.
-        pub fn err_new(self: *Self, msg: []const u8, ctx: anytype) std.mem.Allocator.Error!*Error {
-            return self.startDiagnostic(null, msg, null, ctx);
+        pub fn diag_txt(self: *Self, msg: []const u8, ctx: anytype) std.mem.Allocator.Error!Diag {
+            return Diag.start(self.pool, null, msg, null, ctx);
         }
 
-        /// Like `err_after`, with the call site attached.
-        pub fn err_after_loc(
+        /// Like `diag_err`, with the call site attached.
+        pub fn diag_err_loc(
             self: *Self,
             err_value: anyerror,
             loc: std.builtin.SourceLocation,
             ctx: anytype,
-        ) std.mem.Allocator.Error!*Error {
-            return self.startDiagnostic(err_value, @errorName(err_value), loc, ctx);
+        ) std.mem.Allocator.Error!Diag {
+            return Diag.start(self.pool, err_value, @errorName(err_value), loc, ctx);
         }
 
-        /// Alias of `err_after_loc`.
-        pub fn err_after_log(
-            self: *Self,
-            err_value: anyerror,
-            loc: std.builtin.SourceLocation,
-            ctx: anytype,
-        ) std.mem.Allocator.Error!*Error {
-            return self.startDiagnostic(err_value, @errorName(err_value), loc, ctx);
-        }
-
-        /// Like `err_new`, with the call site attached.
-        pub fn err_new_loc(
+        /// Like `diag_txt`, with the call site attached.
+        pub fn diag_txt_loc(
             self: *Self,
             loc: std.builtin.SourceLocation,
             msg: []const u8,
             ctx: anytype,
-        ) std.mem.Allocator.Error!*Error {
-            return self.startDiagnostic(null, msg, loc, ctx);
-        }
-
-        /// Alias of `err_new_loc`.
-        pub fn err_new_log(
-            self: *Self,
-            loc: std.builtin.SourceLocation,
-            msg: []const u8,
-            ctx: anytype,
-        ) std.mem.Allocator.Error!*Error {
-            return self.startDiagnostic(null, msg, loc, ctx);
-        }
-
-        fn startDiagnostic(
-            self: *Self,
-            spec: ?anyerror,
-            msg: []const u8,
-            loc: ?std.builtin.SourceLocation,
-            ctx: anytype,
-        ) std.mem.Allocator.Error!*Error {
-            for (&self.slots) |*slot| {
-                if (!slot.isConsumed()) continue;
-                return Error.start(slot, self.pool, spec, msg, loc, ctx);
-            }
-            @panic("too many live blog.Error diagnostics; log them before starting new ones");
-        }
-
-        /// Returns every diagnostic this logger still owns to the pool. A
-        /// diagnostic that was started but never logged would otherwise leak
-        /// its frame and trip the pool's own leak assertion.
-        fn releaseDiagnostics(self: *Self) void {
-            for (&self.slots) |*slot| slot.release();
+        ) std.mem.Allocator.Error!Diag {
+            return Diag.start(self.pool, null, msg, loc, ctx);
         }
 
         /// Returns a child logger whose records carry `attrs` as a prefix.
         /// One frame is pinned for the child's lifetime and returned by
         /// `deinit`.
-        pub fn With(self: *Self, attrs: anytype) Self {
+        pub fn with(self: *Self, attrs: anytype) Self {
             // A diagnostic captured in the prefix would be copied once per
             // child record, so it cannot be owned by the child (nor logged).
             comptime std.debug.assert(!hasDiagnostics(@TypeOf(attrs)));
@@ -172,7 +126,6 @@ pub fn Logger(comptime Pool: type, comptime Sink: type) type {
                 return .{
                     .pool = self.pool,
                     .sink = self.sink,
-                    .slots = error_mod.emptySlots(Pool, self.pool),
                 };
             };
 
@@ -188,7 +141,6 @@ pub fn Logger(comptime Pool: type, comptime Sink: type) type {
                 .sink = self.sink,
                 .prefix_alloc = buf,
                 .prefix = buf,
-                .slots = error_mod.emptySlots(Pool, self.pool),
             };
         }
 
@@ -274,14 +226,14 @@ pub fn Logger(comptime Pool: type, comptime Sink: type) type {
             };
         }
 
-        /// Consumes every `*Error` attribute of a record exactly once, walking
+        /// Consumes every `*Diag` attribute of a record exactly once, walking
         /// nested context groups too. Not `inline`: the recursion must be
         /// monomorphized per attribute type.
         fn consumeDiagnostics(self: *Self, attrs: anytype) void {
             const attrs_info = @typeInfo(@TypeOf(attrs));
             inline for (attrs_info.@"struct".fields) |field| {
                 const T = field.type;
-                if (comptime encoding.isErrorPtr(T)) {
+                if (comptime encoding.isDiagPtr(T)) {
                     @field(attrs, field.name).consume();
                 } else if (comptime @typeInfo(T) == .@"struct") {
                     self.consumeDiagnostics(@field(attrs, field.name));
@@ -295,13 +247,13 @@ pub fn Logger(comptime Pool: type, comptime Sink: type) type {
     };
 }
 
-/// True when `T` holds a `*Error` directly or inside a nested context group.
+/// True when `T` holds a `*Diag` directly or inside a nested context group.
 /// Type-driven on purpose: the check runs before any value exists.
 fn hasDiagnostics(comptime T: type) bool {
     const info = @typeInfo(T);
     if (info != .@"struct") return false;
     inline for (info.@"struct".fields) |field| {
-        if (comptime encoding.isErrorPtr(field.type)) return true;
+        if (comptime encoding.isDiagPtr(field.type)) return true;
         if (comptime hasDiagnostics(field.type)) return true;
     }
     return false;
@@ -380,7 +332,7 @@ test "with prefix is encoded, then returned to the pool on deinit" {
 
     var root: Logger(@TypeOf(pool), @TypeOf(sink)) = undefined;
     root.init(&pool, &sink);
-    var child = root.With(.{ .job = "sync" });
+    var child = root.with(.{ .job = "sync" });
     defer child.deinit();
 
     try expect(child.prefix_alloc != null);

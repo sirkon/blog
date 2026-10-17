@@ -2,7 +2,7 @@
 //! `internal/core/error.go` `*Error`.
 //!
 //! A diagnostic accumulates a self-describing payload as the stack unwinds
-//! (`err_after`/`err_new`, then a chain of `wrap`/`with`) and is handed to a
+//! (`diag_err`/`diag_txt`, then a chain of `wrap`/`with`) and is handed to a
 //! logger attribute exactly once. Logging consumes it: the payload frame goes
 //! back to the pool and the diagnostic becomes terminal.
 //!
@@ -12,23 +12,24 @@
 //! cheaply. ReleaseFast and ReleaseSmall drop the field entirely and compile
 //! the checks away, trading the safety net for size and speed.
 //!
-//! Diagnostics are never allocator-created. The storage lives in a fixed slot
-//! array inside the logger that started them and the API hands out pointers, so
-//! the whole lifecycle is `logger.err_after(...)` -> `diag.wrap(...)` ->
-//! `logger.warn(..., .{ .err = diag })`:
+//! A diagnostic is a plain value, not an allocator-created object: the
+//! constructor returns a `Diag(Pool)` the caller owns and every method mutates
+//! it in place, so the whole lifecycle is `var diag = try logger.diag_err(...)`
+//! -> `try diag.wrap(...)` -> `logger.warn(..., .{ .err = &diag })`:
 //!
-//!     var diag = try logger.err_after(err, .{ .name = file_name });
-//!     diag = try diag.wrap("open config file", .{});
-//!     logger.warn("some warning msg", .{ .err = diag });
+//!     var diag = try logger.diag_err(err, .{ .name = file_name });
+//!     try diag.wrap("open config file", .{});
+//!     logger.warn("some warning msg", .{ .err = &diag });
 //!
-//! The payload is one flat buffer, not a chain: only one diagnostic may be
-//! live per slot, and growing it just moves it to an exactly-sized allocation
-//! and releases the previous one. The payload is a plain `[]u8`; once it is
-//! consumed it is reset to the deliberately invalid `(NULL, 0)` value, which is
-//! never backed by a real allocation, so any later use dies with a segfault.
-//! Debug and ReleaseSafe additionally clear the `live` flag, so a fault instead
-//! of silent corruption is guaranteed even where a recycled frame happens to be
-//! mapped; release builds rely on the terminal payload alone.
+//! The payload is one flat buffer, not a chain: `_size` counts the bytes used
+//! and `payload` is the exact allocation backing them. A stage that does not
+//! fit moves the payload to a fresh, exactly-sized allocation and releases the
+//! previous one. The payload is a plain `[]u8`; once it is consumed it is reset
+//! to the deliberately invalid `(NULL, 0)` value, which is never backed by a
+//! real allocation, so any later use dies with a segfault. Debug and ReleaseSafe
+//! additionally clear the `live` flag, so a fault instead of silent corruption
+//! is guaranteed even where a recycled frame happens to be mapped; release
+//! builds rely on the terminal payload alone.
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -76,10 +77,6 @@ pub fn fault() noreturn {
 /// larger ones live on the heap.
 pub const defaultPayloadSize: usize = 512;
 
-/// Number of diagnostics a single logger can keep alive at once. One per
-/// nesting level of the call path; exceeding it is a programming error.
-pub const maxLiveDiagnostics: usize = 8;
-
 /// Whether a diagnostic carries its live flag and validates it on every use.
 /// Only Debug and ReleaseSafe keep the field; release builds drop it so the
 /// struct is smaller and the checks compile away entirely.
@@ -101,9 +98,6 @@ pub inline fn specToError(raw: u16) ?anyerror {
 /// The default pool, i.e. `writer.BufferPool`.
 pub const BufferPool = buffer_pool.BufferPool(false);
 
-/// The concrete diagnostic type used with the default pool.
-pub const Error = Diag(BufferPool);
-
 /// True when `T` is exactly `Diag(Pool)` for some pool. `encoding` uses this
 /// to recognize a diagnostic-valued attribute: the type is identified by its
 /// own definition, not by a marker declaration.
@@ -116,20 +110,28 @@ pub fn isDiag(comptime T: type) bool {
 }
 
 /// Rich diagnostics over a specific pool type. `Logger(Pool, Sink)` hands out
-/// `Diag(Pool)` so a thread-safe pool works as well.
+/// `Diag(Pool)` values, so a thread-safe pool works as well.
+///
+/// A diagnostic is a value: `diag_err`/`diag_txt` return it by copy and every
+/// method mutates it in place through `*Self`. There is no backing slot array
+/// and no allocator-created instance, so the caller owns the value and must
+/// either log it or release it.
 pub fn Diag(comptime Pool: type) type {
     return struct {
         const Self = @This();
 
         /// Pool the payload frames come from.
         buffers: *Pool,
-        /// Current payload. Strictly `[]u8` and exactly the allocation length,
-        /// which is what lets `Pool.put` take the frame back by address alone.
-        /// A freshly built diagnostic starts terminal (`deadPayload`); a
-        /// released one goes back to it, so any use after release faults.
+        /// Backing allocation holding the encoded payload. Its length is the
+        /// allocation size, which may exceed `_size`; the bytes past `_size` are
+        /// unused. `deadPayload` means the diagnostic is terminal.
         payload: []u8 = deadPayload,
+        /// Bytes actually written into `payload`. A stage appends here and, when
+        /// `_size + need` no longer fits the backing slice, the payload moves to
+        /// a larger allocation and the old one goes back to the pool.
+        _size: usize = 0,
         /// The Zig error value this diagnostic was opened with, kept as its raw
-        /// `anyerror` code. Zero means no spec (`err_new`, an invariant
+        /// `anyerror` code. Zero means no spec (`diag_txt`, an invariant
         /// violation); every other value round-trips through `specToError`.
         _spec: u16 = 0,
         /// Liveness flag, present only in Debug and ReleaseSafe. Set by `start`
@@ -142,33 +144,32 @@ pub fn Diag(comptime Pool: type) type {
 
         // ------------------------------------------------------------- entries
 
-        /// Starts a diagnostic in `slot`, bound to `pool`, from a Zig error
-        /// value or a plain message.
+        /// Builds a diagnostic value bound to `pool` from a Zig error value or a
+        /// plain message, with `ctx` as its first stage. The returned value owns
+        /// its payload; log it or `release` it.
         pub fn start(
-            slot: *Self,
             pool: *Pool,
             err: ?anyerror,
             msg: []const u8,
             loc: ?std.builtin.SourceLocation,
             ctx: anytype,
-        ) std.mem.Allocator.Error!*Self {
-            slot.* = .{
+        ) std.mem.Allocator.Error!Self {
+            var self: Self = .{
                 .buffers = pool,
-                .payload = deadPayload,
                 ._spec = if (err) |e| specFromError(e) else 0,
                 .live = if (comptime runtime_checked) true else {},
             };
-            errdefer slot.release();
-            _ = try slot.stage(.nodeNew, msg, loc, ctx);
-            return slot;
+            errdefer self.release();
+            try self.stage(.nodeNew, msg, loc, ctx);
+            return self;
         }
 
         // -------------------------------------------------------------- stages
 
         /// Wraps the diagnostic with a message, keeping every earlier stage.
-        pub fn wrap(self: *Self, msg: []const u8, ctx: anytype) std.mem.Allocator.Error!*Self {
+        pub fn wrap(self: *Self, msg: []const u8, ctx: anytype) std.mem.Allocator.Error!void {
             self.ensureLive();
-            return self.stage(.nodeWrap, msg, null, ctx);
+            try self.stage(.nodeWrap, msg, null, ctx);
         }
 
         /// Like `wrap`, with the call site attached.
@@ -177,15 +178,15 @@ pub fn Diag(comptime Pool: type) type {
             loc: std.builtin.SourceLocation,
             msg: []const u8,
             ctx: anytype,
-        ) std.mem.Allocator.Error!*Self {
+        ) std.mem.Allocator.Error!void {
             self.ensureLive();
-            return self.stage(.nodeWrap, msg, loc, ctx);
+            try self.stage(.nodeWrap, msg, loc, ctx);
         }
 
         /// Adds a context-only stage carrying no message.
-        pub fn with(self: *Self, ctx: anytype) std.mem.Allocator.Error!*Self {
+        pub fn with(self: *Self, ctx: anytype) std.mem.Allocator.Error!void {
             self.ensureLive();
-            return self.stage(.nodeContext, null, null, ctx);
+            try self.stage(.nodeContext, null, null, ctx);
         }
 
         /// Like `with`, with the call site attached.
@@ -193,9 +194,9 @@ pub fn Diag(comptime Pool: type) type {
             self: *Self,
             loc: std.builtin.SourceLocation,
             ctx: anytype,
-        ) std.mem.Allocator.Error!*Self {
+        ) std.mem.Allocator.Error!void {
             self.ensureLive();
-            return self.stage(.nodeContext, null, loc, ctx);
+            try self.stage(.nodeContext, null, loc, ctx);
         }
 
         // -------------------------------------------------------------- access
@@ -208,12 +209,12 @@ pub fn Diag(comptime Pool: type) type {
             return specToError(self._spec);
         }
 
-        /// Bytes currently used by the payload, which is also the exact size of its
-        /// allocation. Reading it from a consumed diagnostic faults, just like
-        /// any other touch of the dead payload.
+        /// Bytes currently used by the payload, which may be smaller than the
+        /// backing allocation. Reading it from a consumed diagnostic faults, just
+        /// like any other touch of the dead payload.
         pub inline fn payloadSize(self: *const Self) usize {
             self.ensureLive();
-            return self.payload.len;
+            return self._size;
         }
 
         /// Encoded bytes. A consumed or never-started diagnostic has the dead
@@ -222,7 +223,7 @@ pub fn Diag(comptime Pool: type) type {
         /// and re-slicing it would silently yield an empty slice.
         pub inline fn payloadSlice(self: *const Self) []const u8 {
             self.ensureLive();
-            return self.payload;
+            return self.payload[0..self._size];
         }
 
         // ------------------------------------------------------------- display
@@ -306,10 +307,10 @@ pub fn Diag(comptime Pool: type) type {
 
         /// Puts the payload allocation back where it came from, clears the live
         /// flag and resets the instance to the dead payload. Safe to call on an
-        /// already-released diagnostic, which keeps slot recycling and `deinit`
-        /// cleanup simple.
+        /// already-released diagnostic, which keeps cleanup simple.
         pub fn release(self: *Self) void {
             if (comptime runtime_checked) self.live = false;
+            self._size = 0;
             if (isDead(self.payload)) return;
             _ = self.buffers.put(self.payload);
             self.payload = deadPayload;
@@ -343,18 +344,18 @@ pub fn Diag(comptime Pool: type) type {
             msg: ?[]const u8,
             loc: ?std.builtin.SourceLocation,
             ctx: anytype,
-        ) std.mem.Allocator.Error!*Self {
+        ) std.mem.Allocator.Error!void {
             const T = @TypeOf(ctx);
             comptime {
                 if (@typeInfo(T) != .@"struct") {
-                    @compileError("blog.Error context must be an anonymous struct, got " ++ @typeName(T));
+                    @compileError("blog.Diag context must be an anonymous struct, got " ++ @typeName(T));
                 }
             }
 
             // Every width below is known before a byte is written, so the
-            // allocation is grown once and encoding never re-checks capacity.
-            // `reserve` sizes the buffer to exactly this many bytes, and the
-            // `std.debug.assert` at the end of the stage proves it.
+            // allocation is grown at most once and encoding never re-checks
+            // capacity. `reserve` guarantees room for exactly this many bytes
+            // past `_size`, and the `std.debug.assert` at the end proves it.
             const msg_size: usize = if (msg) |m| encoding.varintSize(m.len) + m.len else 0;
             const loc_size: usize = if (loc) |l|
                 1 + encoding.varintSize(l.file.len) + l.file.len + encoding.varintSize(l.line)
@@ -362,11 +363,11 @@ pub fn Diag(comptime Pool: type) type {
                 0;
             const entry_size = 1 + msg_size + loc_size + encoding.getStructEncodedSize(ctx) + 1;
 
-            const before = self.payload.len;
+            const before = self._size;
             try self.reserve(entry_size);
 
-            // The slice length tracks the allocation size, so writes go through
-            // this cursor and the length is only updated once they are done.
+            // Writes go through this cursor and `_size` is only updated once
+            // they are done, so a partially written stage never looks complete.
             var cur: [*]u8 = self.payload.ptr + before;
 
             switch (kind) {
@@ -391,26 +392,28 @@ pub fn Diag(comptime Pool: type) type {
             // One stage is exactly one node group on the wire.
             cur = putKind(cur, .nodeGroupEnd);
 
-            self.payload.len = @intFromPtr(cur) - @intFromPtr(self.payload.ptr);
+            self._size = @intFromPtr(cur) - @intFromPtr(self.payload.ptr);
 
-            // The buffer is exactly the size the stage wrote, which is what
-            // lets `release` free it from the pointer and length alone.
-            std.debug.assert(self.payload.len - before == entry_size);
-            return self;
+            // The stage wrote exactly the bytes it announced.
+            std.debug.assert(self._size - before == entry_size);
         }
 
-        /// Grows the payload to exactly `payload.len + need` bytes, releasing
-        /// the previous allocation. Exact sizing (instead of doubling) is what
-        /// keeps the slice length equal to the allocation length, so `Pool.put`
-        /// can take the buffer back from the pointer and the length alone.
+        /// Makes sure the backing payload has room for `_size + need` bytes.
+        /// Fits the current allocation it does nothing; otherwise it asks the
+        /// pool for a fresh buffer of at least `defaultPayloadSize`, copies the
+        /// used bytes over, releases the old allocation and swaps in the new
+        /// one. The slice is never re-sliced, so `Pool.put` still recovers the
+        /// allocation from the pointer alone.
         fn reserve(self: *Self, need: usize) std.mem.Allocator.Error!void {
             if (need == 0) return;
 
-            const old = self.payload;
-            const buf = try self.buffers.get(old.len + need);
-            if (!isDead(old)) {
-                @memcpy(buf[0..old.len], old);
-                _ = self.buffers.put(old);
+            const used = self._size;
+            if (used + need <= self.payload.len) return;
+
+            const buf = try self.buffers.get(@max(used + need, defaultPayloadSize));
+            if (!isDead(self.payload)) {
+                @memcpy(buf[0..used], self.payload[0..used]);
+                _ = self.buffers.put(self.payload);
             }
             self.payload = buf;
         }
@@ -461,16 +464,6 @@ fn takeBytes(payload: *[]const u8, count: usize) std.mem.Allocator.Error![]const
     return bytes;
 }
 
-/// A fresh slot array where every slot is free. Used by the logger when it
-/// builds a value of its own type (init, `With`).
-pub fn emptySlots(comptime Pool: type, pool: *Pool) [maxLiveDiagnostics]Diag(Pool) {
-    var slots: [maxLiveDiagnostics]Diag(Pool) = undefined;
-    for (&slots) |*slot| {
-        slot.* = .{ .buffers = pool, .payload = deadPayload };
-    }
-    return slots;
-}
-
 const expect = std.testing.expect;
 const expectEqual = std.testing.expectEqual;
 const expectEqualSlices = std.testing.expectEqualSlices;
@@ -513,13 +506,14 @@ fn TestRig(comptime frames: u32, comptime frame_size: u32) type {
     };
 }
 
-test "after encodes message, context and group end" {
+test "diag_err encodes message, context and group end" {
     const a = std.testing.allocator;
     var rig: TestRig(4, 512) = undefined;
     try rig.init(a);
     defer rig.deinit();
 
-    const diag = try rig.logger.err_after(error.NotFound, .{ .name = "config" });
+    var diag = try rig.logger.diag_err(error.NotFound, .{ .name = "config" });
+    defer diag.release();
     try expectEqual(error.NotFound, diag.spec().?);
 
     // nodeNew | varint(8) | "NotFound" | string(1) + varint(4) + "name" +
@@ -559,14 +553,16 @@ test "spec round-trips through the raw u16 code" {
     try rig.init(a);
     defer rig.deinit();
 
-    const diag = try rig.logger.err_after(error.NotFound, .{});
+    var diag = try rig.logger.diag_err(error.NotFound, .{});
+    defer diag.release();
     // The stored code is exactly the runtime's own code for the error, not a
     // stable wire value: only `spec()` may interpret it.
     try expectEqual(specFromError(error.NotFound), diag._spec);
     try expectEqual(error.NotFound, diag.spec().?);
 
-    // `err_new` has no spec, which is the zero sentinel.
-    const plain = try rig.logger.err_new("invariant", .{});
+    // `diag_txt` has no spec, which is the zero sentinel.
+    var plain = try rig.logger.diag_txt("invariant", .{});
+    defer plain.release();
     try expectEqual(@as(u16, 0), plain._spec);
     try expectEqual(@as(?anyerror, null), plain.spec());
 
@@ -577,29 +573,30 @@ test "spec round-trips through the raw u16 code" {
 }
 
 test "the live flag is present only in checked builds" {
-    var slot: Error = .{ .buffers = undefined };
+    var diag: Diag(BufferPool) = .{ .buffers = undefined };
     if (comptime runtime_checked) {
-        try expectEqual(false, slot.live);
-        slot.live = true;
-        try expect(!slot.isConsumed());
-        slot.live = false;
-        try expect(slot.isConsumed());
+        try expectEqual(false, diag.live);
+        diag.live = true;
+        try expect(!diag.isConsumed());
+        diag.live = false;
+        try expect(diag.isConsumed());
     } else {
         // Release builds have no flag: the field is `void` and the terminal
         // payload is the only signal left.
-        try expectEqual(void, @TypeOf(slot.live));
-        try expect(slot.isConsumed());
+        try expectEqual(void, @TypeOf(diag.live));
+        try expect(diag.isConsumed());
     }
 }
 
-test "new_loc encodes a location node with the line" {
+test "diag_txt_loc encodes a location node with the line" {
     const a = std.testing.allocator;
     var rig: TestRig(4, 512) = undefined;
     try rig.init(a);
     defer rig.deinit();
 
     const loc = @src();
-    const diag = try rig.logger.err_new_loc(loc, "boom", .{});
+    var diag = try rig.logger.diag_txt_loc(loc, "boom", .{});
+    defer diag.release();
     try expectEqual(@as(?anyerror, null), diag.spec());
 
     const payload = diag.payloadSlice();
@@ -615,7 +612,7 @@ test "new_loc encodes a location node with the line" {
     off += 1;
     const after_file_len = try decoding.decodeVarint(&len, @constCast(payload.ptr + off));
     const file = payload[off + 1 ..][0..@intCast(len)];
-    try expect(std.mem.endsWith(u8, file, "error.zig"));
+    try expect(std.mem.endsWith(u8, file, "diag.zig"));
     off = @intFromPtr(after_file_len) - @intFromPtr(payload.ptr) + @as(usize, @intCast(len));
 
     var line: u64 = 0;
@@ -632,9 +629,10 @@ test "wrap and with chain one group per stage" {
     try rig.init(a);
     defer rig.deinit();
 
-    const diag = try rig.logger.err_after(error.NotFound, .{ .name = "config" });
-    _ = try diag.wrap("open config file", .{});
-    _ = try diag.with(.{ .attempt = @as(u8, 3) });
+    var diag = try rig.logger.diag_err(error.NotFound, .{ .name = "config" });
+    defer diag.release();
+    try diag.wrap("open config file", .{});
+    try diag.with(.{ .attempt = @as(u8, 3) });
 
     // The record framing is irrelevant for the viewer, so feed it the payload
     // of a record header plus the diagnostic itself.
@@ -704,9 +702,10 @@ test "wrap_loc and with_loc attach the call site" {
     defer rig.deinit();
 
     const loc = @src();
-    const diag = try rig.logger.err_after(error.NotFound, .{});
-    _ = try diag.wrap_loc(loc, "open config file", .{});
-    _ = try diag.with_loc(loc, .{ .attempt = @as(u8, 1) });
+    var diag = try rig.logger.diag_err(error.NotFound, .{});
+    defer diag.release();
+    try diag.wrap_loc(loc, "open config file", .{});
+    try diag.with_loc(loc, .{ .attempt = @as(u8, 1) });
 
     var pb = viewer.PB{};
     defer pb.deinit(a);
@@ -727,7 +726,7 @@ test "wrap_loc and with_loc attach the call site" {
         locs += 1;
         try expectEqual(@as(u64, loc.line), node.val_off);
         const file = pb.list.items[node.key_off..][0..node.key_len];
-        try expect(std.mem.endsWith(u8, file, "error.zig"));
+        try expect(std.mem.endsWith(u8, file, "diag.zig"));
     }
     try expectEqual(@as(usize, 2), locs);
 }
@@ -738,10 +737,11 @@ test "string joins stages in reverse order" {
     try rig.init(a);
     defer rig.deinit();
 
-    const diag = try rig.logger.err_after(error.AccessDenied, .{});
-    _ = try diag.wrap("open config file", .{});
-    _ = try diag.wrap("load settings", .{});
-    _ = try diag.with(.{ .pid = @as(u32, 42), .host = "localhost" });
+    var diag = try rig.logger.diag_err(error.AccessDenied, .{});
+    defer diag.release();
+    try diag.wrap("open config file", .{});
+    try diag.wrap("load settings", .{});
+    try diag.with(.{ .pid = @as(u32, 42), .host = "localhost" });
 
     const text = try diag.string(a);
     defer a.free(text);
@@ -754,14 +754,14 @@ test "logging embeds the payload once and returns the frame" {
     try rig.init(a);
     defer rig.deinit();
 
-    const diag = try rig.logger.err_after(error.NotFound, .{ .name = "config" });
+    var diag = try rig.logger.diag_err(error.NotFound, .{ .name = "config" });
 
     var expected: [512]u8 = undefined;
     const expected_len = diag.payloadSize();
     @memcpy(expected[0..expected_len], diag.payloadSlice());
     const frame_ptr = diag.payload.ptr;
 
-    rig.logger.warn("boom", .{ .err = diag });
+    rig.logger.warn("boom", .{ .err = &diag });
     try expect(diag.isConsumed());
 
     const payload = rig.payload();
@@ -813,10 +813,10 @@ test "the payload frame is returned even when the sink fails" {
     var logger: logger_mod.Logger(Pool, FailingSink) = undefined;
     logger.init(&pool, &sink);
 
-    const diag = try logger.err_after(error.OutOfMemory, .{});
+    var diag = try logger.diag_err(error.OutOfMemory, .{});
     const frame_ptr = diag.payload.ptr;
 
-    logger.warn("boom", .{ .err = diag });
+    logger.warn("boom", .{ .err = &diag });
 
     try expectEqual(@as(u64, 1), logger.dropped.load(.monotonic));
     try expect(diag.isConsumed());
@@ -837,8 +837,8 @@ test "logging the same diagnostic twice is terminal" {
     try rig.init(a);
     defer rig.deinit();
 
-    const diag = try rig.logger.err_after(error.NotFound, .{});
-    rig.logger.warn("first", .{ .err = diag });
+    var diag = try rig.logger.diag_err(error.NotFound, .{});
+    rig.logger.warn("first", .{ .err = &diag });
     try expect(diag.isConsumed());
 
     // The second hand-over would touch the dead payload. It is not exercised
@@ -856,7 +856,7 @@ test "the payload is strictly a slice and goes dead on release" {
     try rig.init(a);
     defer rig.deinit();
 
-    const diag = try rig.logger.err_after(error.NotFound, .{});
+    var diag = try rig.logger.diag_err(error.NotFound, .{});
     try expect(!diag.isConsumed());
     try expect(diag.payloadSize() > 0);
 
@@ -869,8 +869,8 @@ test "the payload is strictly a slice and goes dead on release" {
     try expectEqual(@as(usize, 0), @intFromPtr(diag.payload.ptr));
     try expectEqual(@as(usize, 0), diag.payload.len);
 
-    // Releasing twice is a no-op, which keeps slot recycling and `deinit`
-    // cleanup simple; the frame went back exactly once.
+    // Releasing twice is a no-op, which keeps cleanup simple; the frame went
+    // back exactly once.
     diag.release();
     try expect(diag.isConsumed());
 }
@@ -919,7 +919,7 @@ test "context larger than the initial payload grows safely" {
     defer rig.deinit();
 
     const blob = "x" ** 1024;
-    const diag = try rig.logger.err_after(error.Unexpected, .{ .blob = blob, .n = @as(u8, 7) });
+    var diag = try rig.logger.diag_err(error.Unexpected, .{ .blob = blob, .n = @as(u8, 7) });
 
     // Far past a 512-byte frame, so the payload moved off the pool and the
     // frame it started in was released.
@@ -929,7 +929,7 @@ test "context larger than the initial payload grows safely" {
     const found = std.mem.indexOf(u8, diag.payloadSlice(), blob) != null;
     try expect(found);
 
-    rig.logger.warn("big", .{ .err = diag });
+    rig.logger.warn("big", .{ .err = &diag });
     try expect(diag.isConsumed());
 }
 
@@ -956,37 +956,41 @@ test "pool exhaustion surfaces as an allocation error" {
     // which is failing.
     const held = try pool.get(512);
 
-    try std.testing.expectError(error.OutOfMemory, logger.err_after(error.NotFound, .{}));
+    try std.testing.expectError(error.OutOfMemory, logger.diag_err(error.NotFound, .{}));
 
-    // The failed start left a free slot behind, so the logger still works and
-    // a diagnostic can be started once a frame is available again.
+    // Nothing was left half-built, so a diagnostic can be started once a frame
+    // is available again.
     try expect(pool.put(held));
 
-    const diag = try logger.err_after(error.NotFound, .{});
-    logger.warn("after exhaustion", .{ .err = diag });
+    var diag = try logger.diag_err(error.NotFound, .{});
+    defer diag.release();
+    logger.warn("after exhaustion", .{ .err = &diag });
     try expectEqual(@as(u64, 1), logger.dropped.load(.monotonic));
 }
 
-test "slots are recycled only after a diagnostic was logged" {
+test "diagnostics are independent values" {
     const a = std.testing.allocator;
     var rig: TestRig(4, 512) = undefined;
     try rig.init(a);
     defer rig.deinit();
 
-    const first = try rig.logger.err_after(error.NotFound, .{});
-    const second = try rig.logger.err_after(error.AccessDenied, .{});
-    try expect(first != second);
+    var first = try rig.logger.diag_err(error.NotFound, .{});
+    defer first.release();
+    var second = try rig.logger.diag_err(error.AccessDenied, .{});
+    defer second.release();
 
-    rig.logger.warn("first", .{ .err = first });
-    const reused = try rig.logger.err_after(error.Unexpected, .{});
-    try expect(reused == first);
-    try expectEqual(error.Unexpected, reused.spec().?);
+    try expectEqual(error.NotFound, first.spec().?);
+    try expectEqual(error.AccessDenied, second.spec().?);
 
-    rig.logger.warn("second", .{ .err = reused });
-    rig.logger.warn("third", .{ .err = second });
+    rig.logger.warn("first", .{ .err = &first });
+    try expect(first.isConsumed());
+    try expect(!second.isConsumed());
+
+    rig.logger.warn("second", .{ .err = &second });
+    try expect(second.isConsumed());
 }
 
-test "unlogged diagnostics are released by logger deinit" {
+test "an unlogged diagnostic is released by the caller" {
     const a = std.testing.allocator;
 
     const Pool = buffer_pool.BufferPool(false);
@@ -1002,9 +1006,12 @@ test "unlogged diagnostics are released by logger deinit" {
 
     var logger: logger_mod.Logger(Pool, Sink) = undefined;
     logger.init(&pool, &sink);
-    _ = try logger.err_after(error.NotFound, .{ .name = "never logged" });
 
-    // Without this the pool's deinit assertion would trip on the leaked frame.
+    // The logger no longer owns diagnostics, so the caller returns the frame;
+    // without this the pool's deinit assertion would trip on the leaked frame.
+    var diag = try logger.diag_err(error.NotFound, .{ .name = "never logged" });
+    diag.release();
+
     logger.deinit();
 }
 
@@ -1038,9 +1045,9 @@ test "a logged diagnostic renders through the JSON sink" {
     logger.init(&pool, &sink);
     defer logger.deinit();
 
-    var diag = try logger.err_after(error.NotFound, .{ .name = "config" });
-    diag = try diag.wrap("open config file", .{});
-    logger.warn("boom", .{ .err = diag });
+    var diag = try logger.diag_err(error.NotFound, .{ .name = "config" });
+    try diag.wrap("open config file", .{});
+    logger.warn("boom", .{ .err = &diag });
 
     // Only the timestamp varies; everything else is frozen by the Go encoder's
     // shape: the error context keeps its stages, `@txt` is the joined text.
@@ -1061,24 +1068,24 @@ test "a diagnostic logs once and rejects a second hand-over" {
     try rig.init(a);
     defer rig.deinit();
 
-    const diag = try rig.logger.err_after(error.NotFound, .{});
+    var diag = try rig.logger.diag_err(error.NotFound, .{});
     try expect(diag.spec().? == error.NotFound);
     try expect(!diag.isConsumed());
 
-    rig.logger.warn("mine", .{ .err = diag });
+    rig.logger.warn("mine", .{ .err = &diag });
     try expect(diag.isConsumed());
 }
-test "logging through a With child works and releases both frames" {
+test "logging through a with child works and releases both frames" {
     const a = std.testing.allocator;
     var rig: TestRig(4, 512) = undefined;
     try rig.init(a);
     defer rig.deinit();
 
-    var child = rig.logger.With(.{ .job = "sync" });
+    var child = rig.logger.with(.{ .job = "sync" });
     defer child.deinit();
 
-    const diag = try child.err_after(error.NotFound, .{ .name = "config" });
-    child.warn("boom", .{ .err = diag });
+    var diag = try child.diag_err(error.NotFound, .{ .name = "config" });
+    child.warn("boom", .{ .err = &diag });
     try expect(diag.isConsumed());
 
     // The prefix attr precedes the call-site error attribute, and the pooled
@@ -1107,9 +1114,9 @@ test "a diagnostic nested in a context group is consumed too" {
     try rig.init(a);
     defer rig.deinit();
 
-    const diag = try rig.logger.err_after(error.NotFound, .{ .name = "config" });
+    var diag = try rig.logger.diag_err(error.NotFound, .{ .name = "config" });
     const frame_ptr = diag.payload.ptr;
-    rig.logger.err("grouped", .{ .where = .{ .err = diag } });
+    rig.logger.err("grouped", .{ .where = .{ .err = &diag } });
 
     try expect(diag.isConsumed());
     try expectEqual(@as(u64, 0), rig.logger.dropped.load(.monotonic));
@@ -1142,13 +1149,13 @@ test "a long chain keeps growing off the pool without leaking" {
     defer rig.deinit();
 
     const pad = "z" ** 300;
-    var diag = try rig.logger.err_after(error.NotFound, .{ .blob = "y" ** 700 });
+    var diag = try rig.logger.diag_err(error.NotFound, .{ .blob = "y" ** 700 });
     try expect(diag.payloadSize() > defaultPayloadSize);
 
     // Each stage moves the payload to a fresh allocation; the earlier ones are
     // released as it moves, so nothing but the final one is owed.
     var i: usize = 0;
-    while (i < 40) : (i += 1) diag = try diag.wrap("lvl", .{ .pad = pad });
+    while (i < 40) : (i += 1) try diag.wrap("lvl", .{ .pad = pad });
 
     const text = try diag.string(a);
     defer a.free(text);
@@ -1156,30 +1163,26 @@ test "a long chain keeps growing off the pool without leaking" {
     try expect(std.mem.startsWith(u8, text, "lvl: "));
     try expect(std.mem.endsWith(u8, text, "NotFound"));
 
-    rig.logger.warn("deep", .{ .err = diag });
+    rig.logger.warn("deep", .{ .err = &diag });
     try expect(diag.isConsumed());
     try expectEqual(@as(u64, 0), rig.logger.dropped.load(.monotonic));
     try expect(rig.sink.bytes.items.len > 12 * 1024);
 }
 
-test "all slots are usable and reusable once logged" {
+test "many live diagnostics are independent values" {
     const a = std.testing.allocator;
     var rig: TestRig(16, 512) = undefined;
     try rig.init(a);
     defer rig.deinit();
 
-    var diags: [maxLiveDiagnostics]*Error = undefined;
-    for (&diags) |*slot| slot.* = try rig.logger.err_after(error.NotFound, .{});
-    for (diags, 0..) |slot, i| {
-        // Distinct slots, so a live diagnostic is never overwritten.
-        for (diags[0..i]) |earlier| try expect(earlier != slot);
-        try expectEqual(error.NotFound, slot.spec().?);
-    }
-    for (diags) |slot| rig.logger.warn("x", .{ .err = slot });
+    // No slot array bounds the count any more: the caller owns each value.
+    var diags: [16]logger_mod.Logger(@TypeOf(rig.pool), writer_mod.MemorySink).Diag = undefined;
+    for (&diags) |*slot| slot.* = try rig.logger.diag_err(error.NotFound, .{});
+    for (&diags) |*slot| try expectEqual(error.NotFound, slot.spec().?);
+    for (&diags) |*slot| rig.logger.warn("x", .{ .err = slot });
 
-    // Logging frees every slot for the next round.
-    for (&diags) |*slot| slot.* = try rig.logger.err_after(error.AccessDenied, .{});
-    for (diags) |slot| {
+    for (&diags) |*slot| slot.* = try rig.logger.diag_err(error.AccessDenied, .{});
+    for (&diags) |*slot| {
         try expectEqual(error.AccessDenied, slot.spec().?);
         rig.logger.warn("y", .{ .err = slot });
     }

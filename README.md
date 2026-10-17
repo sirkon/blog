@@ -34,26 +34,27 @@ var logger: blog.Logger(blog.BufferPool, blog.MemorySink) = undefined;
 logger.init(&pool, &sink);
 logger.info("hello", .{ .n = @as(u32, 7) });
 
-var child = logger.With(.{ .job = "sync" });
+var child = logger.with(.{ .job = "sync" });
 defer child.deinit();
 child.warn("child record", .{ .x = @as(i16, -3) });
 ```
 
 ## Rich diagnostics.
 
-`Error` carries structured context across a call chain the same way Go's
-`blog.Error` does. `logger.err_after`/`err_new` start it, `wrap`/`with` grow it,
-and handing the pointer to a logger attribute logs it:
+`Diag` carries structured context across a call chain the same way Go's
+`blog.Error` does. `logger.diag_err`/`diag_txt` start it, `wrap`/`with` grow it,
+and handing a pointer to a logger attribute logs it:
 
 ```zig
-var diag = try logger.err_after(err, .{ .name = file_name });
-diag = try diag.wrap("open config file", .{ .attempt = @as(u8, 2) });
-logger.warn("cannot start", .{ .err = diag });
+var diag = try logger.diag_err(err, .{ .name = file_name });
+try diag.wrap("open config file", .{ .attempt = @as(u8, 2) });
+logger.warn("cannot start", .{ .err = &diag });
 ```
 
-A diagnostic is never allocator-created and is terminal once logged: appending
-to it or logging it again resets its payload to a deliberately invalid value, so
-the next use faults instead of touching a recycled frame.
+A diagnostic is a plain value the caller owns, not a logger slot. It is terminal
+once logged: appending to it or logging it again resets its payload to a
+deliberately invalid value, so the next use faults instead of touching a
+recycled frame.
 `diag.spec()` returns the original Zig error value and
 `diag.string(allocator)` renders the stages as `"outer: inner"`.
 

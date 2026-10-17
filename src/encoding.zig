@@ -64,11 +64,11 @@ pub fn getStructEncodedSize(struct_val: anytype) usize {
                 totalSize += 1;
             },
             .pointer => |ptrInfo| {
-                // A `*blog.Error` value contributes its own payload, which
+                // A `*blog.Diag` value contributes its own payload, which
                 // already ends with a group end, plus the group end that
                 // closes the `nodeError` node.
-                if (comptime isErrorPtr(FieldType)) {
-                    totalSize += errorValueSize(val.payloadSize());
+                if (comptime isDiagPtr(FieldType)) {
+                    totalSize += diagValueSize(val.payloadSize());
                     continue;
                 }
 
@@ -305,26 +305,26 @@ pub inline fn varintSize(value: u64) usize {
     return ((bits - 1) / 7) + 1;
 }
 
-/// True when `T` is a `*blog.Error` for any pool instantiation. Delegates to
-/// the diagnostic module, which identifies its own type; the import cycle is
+/// True when `T` is a `*blog.Diag(Pool)` for any pool instantiation. Delegates
+/// to the diagnostic module, which identifies its own type; the import cycle is
 /// harmless because only comptime functions reference each other.
-pub fn isErrorPtr(comptime T: type) bool {
+pub fn isDiagPtr(comptime T: type) bool {
     const info = @typeInfo(T);
     if (info != .pointer) return false;
     if (info.pointer.size != .one) return false;
-    return @import("error.zig").isDiag(info.pointer.child);
+    return @import("diag.zig").isDiag(info.pointer.child);
 }
 
-/// Bytes an embedded error payload adds to the `nodeError` node holding it:
-/// the payload itself (already closed by its own group end) plus the group end
-/// that closes the `nodeError` node.
-pub fn errorValueSize(payload_len: usize) usize {
+/// Bytes an embedded diagnostic payload adds to the `nodeError` node holding
+/// it: the payload itself (already closed by its own group end) plus the group
+/// end that closes the `nodeError` node.
+pub fn diagValueSize(payload_len: usize) usize {
     return payload_len + 1;
 }
 
 /// A thin cursor over a byte buffer that appends serialized fields. It knows
 /// nothing about pools, IO or log framing. Shared by the logger (record
-/// attrs, `With` prefixes) and by rich diagnostics (`error.zig`).
+/// attrs, `with` prefixes) and by rich diagnostics (`diag.zig`).
 pub const Frame = struct {
     cur: [*]u8,
 
@@ -358,7 +358,7 @@ pub const Frame = struct {
                         .float => |info| if (info.bits == 32) .sliceFloat32 else .sliceFloat64,
                         else => @compileError("Unsupported slice item: " ++ @typeName(Child)),
                     };
-                } else if (isErrorPtr(T)) {
+                } else if (isDiagPtr(T)) {
                     break :block .nodeError;
                 } else if (ptrInfo.size == .one and (ptrInfo.child == u8 or switch (@typeInfo(ptrInfo.child)) {
                     .array => |arr| arr.child == u8,
@@ -402,7 +402,7 @@ pub const Frame = struct {
                 self.cur += 1;
             },
             .pointer => {
-                if (comptime isErrorPtr(T)) {
+                if (comptime isDiagPtr(T)) {
                     // The diagnostic payload closes itself with a group end;
                     // one more closes the `nodeError` node. A consumed
                     // diagnostic has the dead payload, so reading it here is

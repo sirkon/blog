@@ -87,8 +87,8 @@ public surface, by area:
 | `blog.PrettySink` | `fn(Writer) type` - human-readable tree/JSON sink |
 | `blog.JsonSink` | `fn(Writer) type` - compact JSONL sink |
 | `blog.WriteError` | `error{WriteFailed}` |
-| `blog.Error` | `errors.Error` = `Diag(BufferPool)`, the concrete diagnostic type |
-| `blog.errors` | The whole `error.zig` module (`Diag`, `isDiag`, `maxLiveDiagnostics`) |
+| `blog.Diag` | `diag.Diag`, the comptime factory; `blog.Diag(Pool)` is the diagnostic type `Logger(Pool, Sink)` hands out |
+| `blog.diag` | The whole `diag.zig` module (`Diag`, `isDiag`, `defaultPayloadSize`) |
 | `blog.ColorProfile` | `render.ColorProfile` |
 | `blog.RenderOptions` | `render.RenderOptions` |
 | `blog.render` | The whole `render.zig` module (`Renderer`, fixtures) |
@@ -135,7 +135,7 @@ pub fn main() !void {
 
     logger.info("hello", .{ .n = @as(u32, 7) });
 
-    var child = logger.With(.{ .job = "sync" });
+    var child = logger.with(.{ .job = "sync" });
     defer child.deinit(); // returns the pinned prefix frame
     child.warn("child record", .{ .x = @as(i16, -3) });
 }
@@ -206,12 +206,12 @@ Construction and teardown:
 ```zig
 var logger: blog.Logger(Pool, Sink) = undefined;
 logger.init(&pool, &sink);
-defer logger.deinit(); // releases the With prefix frame and unlogged diagnostics
+defer logger.deinit(); // releases the with prefix frame
 ```
 
 `init` takes `*Pool` and `*Sink`; both are **borrowed** and must outlive the
-logger. `Logger` has public fields (`pool`, `sink`, `prefix_alloc`, `prefix`,
-`slots`) but treat them as read-only, `prefix` is deliberately a subview of
+logger. `Logger` has public fields (`pool`, `sink`, `prefix_alloc`, `prefix`)
+but treat them as read-only, `prefix` is deliberately a subview of
 `prefix_alloc` so `put` can recover the allocation.
 
 ### Levels
@@ -248,25 +248,25 @@ attr1, attr2)` does not exist. Nest attributes in groups instead.
 ### Child loggers
 
 ```zig
-var child = logger.With(.{ .job = "sync", .shard = @as(u8, 3) });
+var child = logger.with(.{ .job = "sync", .shard = @as(u8, 3) });
 defer child.deinit();
 
 child.info("tick", .{ .n = @as(u32, 1) });
 // emits job=sync, shard=3, then n=1
 ```
 
-- `With` returns a **new logger value (a copy)** whose records carry `attrs` as a
+- `with` returns a **new logger value (a copy)** whose records carry `attrs` as a
   prefix, encoded once into a single pooled frame that the child pins for its
   lifetime.
 - The child **must** be `deinit`ed; that is what returns the prefix frame. The
   pool's leak assertion will catch a missing `deinit`.
-- A prefix frame is *not* extended in place. `logger.With(...).With(...)` copies
+- A prefix frame is *not* extended in place. `logger.with(...).with(...)` copies
   the whole prefix again, so build the deepest prefix once at startup rather
   than re-wrapping per request.
-- `With` rejects a diagnostic-valued attribute at **compile time**
+- `with` rejects a diagnostic-valued attribute at **compile time**
   (`comptime std.debug.assert(!hasDiagnostics(...))`), because a prefix is copied
   once per record and a diagnostic is log-once.
-- If the pool cannot provide the prefix frame, `With` does not fail: it drops the
+- If the pool cannot provide the prefix frame, `with` does not fail: it drops the
   record accounting and returns an *empty* logger value with a zero-length
   prefix. Silent, but it only happens under exhaustion.
 
@@ -274,7 +274,7 @@ child.info("tick", .{ .n = @as(u32, 1) });
 
 `writeRecord` always writes a `0x00` location byte, so **the Zig logger does not
 record call sites**. `Location` in the wire format is populated only by rich
-diagnostics built with `err_after_loc` / `err_new_loc` / `wrap_loc` /
+diagnostics built with `diag_err_loc` / `diag_txt_loc` / `wrap_loc` /
 `with_loc`, or by a Go producer.
 
 There is also **no level filter** and no `OptionLogFromLevel` equivalent: every
@@ -476,48 +476,51 @@ len] payload`, rejects trailing bytes, and returns the payload slice.
 
 ## Rich diagnostics
 
-`error.zig` is the Zig counterpart of Go's `beer.Error`: a diagnostic
+`diag.zig` is the Zig counterpart of Go's `beer.Error`: a diagnostic
 accumulates a self-describing payload as the stack unwinds and is handed to a
-logger attribute exactly once.
+logger attribute exactly once. A diagnostic is a plain **value**, not a
+logger-owned pointer: the constructor returns a `Diag(Pool)` the caller owns.
 
 ```zig
-var diag = try logger.err_after(error.NotFound, .{ .name = file_name });
-diag = try diag.wrap("open config file", .{ .attempt = @as(u8, 2) });
-diag = try diag.with(.{ .uid = @as(u32, 42) });
-logger.warn("cannot start", .{ .err = diag });
+var diag = try logger.diag_err(error.NotFound, .{ .name = file_name });
+try diag.wrap("open config file", .{ .attempt = @as(u8, 2) });
+try diag.with(.{ .uid = @as(u32, 42) });
+logger.warn("cannot start", .{ .err = &diag });
 ```
 
 ### Starting
 
 ```zig
-pub fn err_after(self: *Self, err_value: anyerror, ctx: anytype) !*Error
-pub fn err_new(self: *Self, msg: []const u8, ctx: anytype) !*Error
-pub fn err_after_loc(self: *Self, err_value: anyerror, loc: std.builtin.SourceLocation, ctx: anytype) !*Error
-pub fn err_new_loc(self: *Self, loc: std.builtin.SourceLocation, msg: []const u8, ctx: anytype) !*Error
+pub fn diag_err(self: *Self, err_value: anyerror, ctx: anytype) !Diag
+pub fn diag_txt(self: *Self, msg: []const u8, ctx: anytype) !Diag
+pub fn diag_err_loc(self: *Self, err_value: anyerror, loc: std.builtin.SourceLocation, ctx: anytype) !Diag
+pub fn diag_txt_loc(self: *Self, loc: std.builtin.SourceLocation, msg: []const u8, ctx: anytype) !Diag
 ```
 
-- `err_after` / `err_new` (`_log` are aliases of the `_loc` variants) return a
-  `*Error` owned by the logger, or `error.OutOfMemory`.
-- `err_after` keeps the Zig error value: `diag.spec()` returns it as `?anyerror`.
-  `err_new` is spec-less (`spec()` returns `null`) - use it for invariant
+- `diag_err` / `diag_txt` return a `Diag(Pool)` value the caller owns, or
+  `error.OutOfMemory`.
+- `diag_err` keeps the Zig error value: `diag.spec()` returns it as `?anyerror`.
+  `diag_txt` is spec-less (`spec()` returns `null`) - use it for invariant
   violations with no certain code.
 - The `_loc` variants take a `std.builtin.SourceLocation`, normally
   `@src()`, and encode a `@location: file:line` node inside that stage.
 - `ctx` must be an anonymous struct; anything else is a `@compileError`
-  ("blog.Error context must be an anonymous struct").
+  ("blog.Diag context must be an anonymous struct").
 
 ### Growing
 
 ```zig
-pub fn wrap(self: *Self, msg: []const u8, ctx: anytype) !*Self
-pub fn with(self: *Self, ctx: anytype) !*Self
-pub fn wrap_loc(self: *Self, loc: std.builtin.SourceLocation, msg: []const u8, ctx: anytype) !*Self
-pub fn with_loc(self: *Self, loc: std.builtin.SourceLocation, ctx: anytype) !*Self
+pub fn wrap(self: *Self, msg: []const u8, ctx: anytype) !void
+pub fn with(self: *Self, ctx: anytype) !void
+pub fn wrap_loc(self: *Self, loc: std.builtin.SourceLocation, msg: []const u8, ctx: anytype) !void
+pub fn with_loc(self: *Self, loc: std.builtin.SourceLocation, ctx: anytype) !void
 ```
 
 `wrap` adds a labelled stage; `with` adds a message-less `CTX` stage. Every
-earlier stage is preserved, and each stage grows the payload into a fresh
-exactly-sized allocation, releasing the previous one.
+earlier stage is preserved. The payload keeps a `_size` cursor over a backing
+allocation; a stage that no longer fits asks the pool for a fresh buffer of at
+least `defaultPayloadSize` bytes, copies the used bytes over, releases the old
+allocation and swaps in the new one.
 
 ### Inspecting
 
@@ -535,10 +538,10 @@ pub fn isConsumed(self: *const Self) bool
 ### Logging (and the terminal rule)
 
 ```zig
-logger.warn("msg", .{ .err = diag }); // consumes it
+logger.warn("msg", .{ .err = &diag }); // consumes it
 ```
 
-Handing a `*Error` to any level method - directly or nested inside a group,
+Handing a `*Diag(Pool)` to any level method - directly or nested inside a group,
 which is walked recursively - copies its payload into the record and
 **consumes** the diagnostic: the frame goes back to the pool and the diagnostic
 becomes terminal.
@@ -550,18 +553,16 @@ becomes terminal.
   Debug and ReleaseSafe. ReleaseFast and ReleaseSmall compile the check out and
   rely on the NULL payload to segfault.
 - Every method is safe to call on an already-released diagnostic (the dead
-  payload makes `release` idempotent), which is what makes `deinit` cleanup
-  trivial.
+  payload makes `release` idempotent).
 
-### Slots and lifetimes
+### Values and lifetimes
 
-- The storage lives in a **fixed array of `maxLiveDiagnostics = 8` slots inside
-  the logger that started the diagnostic**. There is no allocator-created
-  diagnostic and no way to move one to another logger.
-- Starting a 9th live diagnostic **panics**: "too many live blog.Error
-  diagnostics; log them before starting new ones".
-- Logging frees the slot for reuse; `logger.deinit()` releases every unlogged
-  diagnostic so a started-but-never-logged diagnostic cannot leak the frame.
+- A diagnostic is a plain value the caller owns; there is **no slot array** and
+  no `maxLiveDiagnostics` bound. Nothing about it is tied to the logger that
+  lent the pool.
+- Logging (or `release`) returns the payload frame to the pool. An unlogged
+  diagnostic leaks its frame unless the caller calls `release()`, so pair every
+  diagnostic with either a log call or a `defer diag.release()`.
 
 ---
 
@@ -723,17 +724,16 @@ Records are dropped on pool failure or sink failure, and the logger's `dropped`
 counter is bumped. Check `logger.dropped.load(.monotonic)` if you care. The CLI
 prints a warning to stderr when it is nonzero after a run.
 
-### Diagnostics are log-once and slot-bound
+### Diagnostics are log-once values
 
-- 8 live diagnostics per logger; the 9th panics.
+- A diagnostic is a value the caller owns; there is no slot limit.
 - Use after log (or double log) faults by dereferencing NULL; in Debug and
   ReleaseSafe a `live` flag catches it first.
-- A diagnostic cannot be used as a `With` prefix (compile error) and cannot be
-  moved to another logger value.
-- Always `defer logger.deinit()` so a started-but-unlogged diagnostic returns its
-  frame.
+- A diagnostic cannot be used as a `with` prefix (compile error).
+- Either log it or `defer diag.release()`; an unlogged diagnostic leaks its
+  frame otherwise.
 
-### `With` pins a frame for the child's entire lifetime
+### `with` pins a frame for the child's entire lifetime
 
 Forget `child.deinit()` and the pool's leak assertion (or `std.testing.allocator`)
 fires. Building prefixes lazily per request copies the whole prefix each time.
@@ -773,11 +773,6 @@ The diagnostic `live` flag and every check that reads it are compiled out in
 ReleaseFast/ReleaseSmall. A use-after-log then relies on the NULL payload
 segfaulting rather than on an explicit fault.
 
-### `zig build test` exits non-zero even on success
-
-122/122 pass, then the `src/main.zig` test leaks its pool/sink (7 allocations).
-Pre-existing and owned by a missing `deinit` in that smoke test.
-
 ### Adding a source file means touching `root.zig` twice
 
 Re-export the declaration and add `_ = @import("new_file.zig");` to the `test`
@@ -795,10 +790,10 @@ const std = @import("std");
 const blog = @import("blog");
 
 fn loadConfig(logger: anytype, path: []const u8) !void {
-    var diag = try logger.err_after(error.FileNotFound, .{ .path = path });
-    diag = try diag.wrap_loc(@src(), "open config file", .{ .attempt = @as(u8, 2) });
-    diag = try diag.with(.{ .uid = @as(u32, 42) });
-    logger.warn("cannot start", .{ .err = diag });
+    var diag = try logger.diag_err(error.FileNotFound, .{ .path = path });
+    try diag.wrap_loc(@src(), "open config file", .{ .attempt = @as(u8, 2) });
+    try diag.with(.{ .uid = @as(u32, 42) });
+    logger.warn("cannot start", .{ .err = &diag });
 }
 
 pub fn main() !void {
@@ -829,7 +824,7 @@ pub fn main() !void {
         .ratio = @as(f64, 0.75),
     });
 
-    var child = logger.With(.{ .job = "sync" });
+    var child = logger.with(.{ .job = "sync" });
     defer child.deinit();
     child.debug("tick", .{ .shard = @as(u32, 7) });
 
@@ -840,11 +835,11 @@ pub fn main() !void {
     }
 
     // A diagnostic built by hand, inspected before it is logged.
-    var diag = try logger.err_new("disk failure", .{ .device = "/dev/sda" });
+    var diag = try logger.diag_txt("disk failure", .{ .device = "/dev/sda" });
     const text = try diag.string(allocator);
     defer allocator.free(text);
     std.debug.print("diag renders as: {s} ({d} bytes payload)\n", .{ text, diag.payloadSize() });
-    logger.err("io error", .{ .err = diag });
+    logger.err("io error", .{ .err = &diag });
     std.debug.assert(diag.isConsumed());
 }
 ```
