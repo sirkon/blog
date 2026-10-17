@@ -174,7 +174,9 @@ carry that known-key code, which is why `attr_serialize.go` shifts by 8.
 - A diagnostic passed to `Logger.With` is rejected at comptime
   (`hasDiagnostics`); prefixes are copied per record.
 - `writeRecord` consumes diagnostics *before* entering the sink, and a failed
-  or too-large record is dropped (bumping `sink.dropped`) rather than panicking.
+  or too-large record is dropped (bumping the logger's own `dropped`) rather
+  than panicking. A sink with its own `dropped` field counts only the frames it
+  rejects itself.
 - In Debug/ReleaseSafe a diag carries a `live` flag and faults on misuse; in
   ReleaseFast/ReleaseSmall the checks and the field are compiled away, relying
   on the NULL terminal payload to segfault instead.

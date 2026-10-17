@@ -798,8 +798,6 @@ test "the payload frame is returned even when the sink fails" {
     const Pool = buffer_pool.BufferPool(false);
 
     const FailingSink = struct {
-        dropped: std.atomic.Value(u64) = .init(0),
-
         pub fn write(self: *@This(), pool: *Pool, buf: []const u8) error{WriteFailed}!usize {
             _ = self;
             _ = pool.put(@constCast(buf));
@@ -820,7 +818,7 @@ test "the payload frame is returned even when the sink fails" {
 
     logger.warn("boom", .{ .err = diag });
 
-    try expectEqual(@as(u64, 1), sink.dropped.load(.monotonic));
+    try expectEqual(@as(u64, 1), logger.dropped.load(.monotonic));
     try expect(diag.isConsumed());
     try expectEqual(@as(usize, 0), @intFromPtr(diag.payload.ptr));
 
@@ -849,7 +847,7 @@ test "logging the same diagnostic twice is terminal" {
     try expectEqual(@as(usize, 0), @intFromPtr(diag.payload.ptr));
     try expect(diag.isConsumed());
     rig.logger.info("second", .{});
-    try expectEqual(@as(u64, 0), rig.sink.dropped.load(.monotonic));
+    try expectEqual(@as(u64, 0), rig.logger.dropped.load(.monotonic));
 }
 
 test "the payload is strictly a slice and goes dead on release" {
@@ -966,7 +964,7 @@ test "pool exhaustion surfaces as an allocation error" {
 
     const diag = try logger.err_after(error.NotFound, .{});
     logger.warn("after exhaustion", .{ .err = diag });
-    try expectEqual(@as(u64, 1), sink.dropped.load(.monotonic));
+    try expectEqual(@as(u64, 1), logger.dropped.load(.monotonic));
 }
 
 test "slots are recycled only after a diagnostic was logged" {
@@ -1055,7 +1053,7 @@ test "a logged diagnostic renders through the JSON sink" {
 
     // The payload is consumed by the logging, and its frame went back.
     try expect(diag.isConsumed());
-    try expectEqual(@as(u64, 0), sink.dropped.load(.monotonic));
+    try expectEqual(@as(u64, 0), logger.dropped.load(.monotonic));
 }
 test "a diagnostic logs once and rejects a second hand-over" {
     const a = std.testing.allocator;
@@ -1101,7 +1099,7 @@ test "logging through a With child works and releases both frames" {
     off = @intFromPtr(next) - @intFromPtr(payload.ptr) + @as(usize, @intCast(len));
 
     try expectEqual(@intFromEnum(consts.ValueKind.nodeError), payload[off]);
-    try expectEqual(@as(u64, 0), rig.sink.dropped.load(.monotonic));
+    try expectEqual(@as(u64, 0), rig.logger.dropped.load(.monotonic));
 }
 test "a diagnostic nested in a context group is consumed too" {
     const a = std.testing.allocator;
@@ -1114,7 +1112,7 @@ test "a diagnostic nested in a context group is consumed too" {
     rig.logger.err("grouped", .{ .where = .{ .err = diag } });
 
     try expect(diag.isConsumed());
-    try expectEqual(@as(u64, 0), rig.sink.dropped.load(.monotonic));
+    try expectEqual(@as(u64, 0), rig.logger.dropped.load(.monotonic));
 
     // The nested attribute still renders as a `nodeError` with the payload.
     const payload = rig.payload();
@@ -1160,7 +1158,7 @@ test "a long chain keeps growing off the pool without leaking" {
 
     rig.logger.warn("deep", .{ .err = diag });
     try expect(diag.isConsumed());
-    try expectEqual(@as(u64, 0), rig.sink.dropped.load(.monotonic));
+    try expectEqual(@as(u64, 0), rig.logger.dropped.load(.monotonic));
     try expect(rig.sink.bytes.items.len > 12 * 1024);
 }
 
@@ -1185,5 +1183,5 @@ test "all slots are usable and reusable once logged" {
         try expectEqual(error.AccessDenied, slot.spec().?);
         rig.logger.warn("y", .{ .err = slot });
     }
-    try expectEqual(@as(u64, 0), rig.sink.dropped.load(.monotonic));
+    try expectEqual(@as(u64, 0), rig.logger.dropped.load(.monotonic));
 }

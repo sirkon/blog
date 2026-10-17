@@ -94,8 +94,6 @@ pub const MemorySink = struct {
 
     allocator: std.mem.Allocator,
     bytes: std.ArrayList(u8) = .empty,
-    /// Records the logger had to drop before they reached this sink.
-    dropped: std.atomic.Value(u64) = .init(0),
 
     pub fn init(self: *Self, allocator: std.mem.Allocator) void {
         self.* = .{ .allocator = allocator };
@@ -177,8 +175,6 @@ pub fn FileSink(comptime Writer: type) type {
         writer: *Writer,
         last_error: ?anyerror = null,
         written: u64 = 0,
-        /// Records the logger had to drop before they reached this sink.
-        dropped: std.atomic.Value(u64) = .init(0),
 
         pub fn init(self: *Self, writer: *Writer) void {
             self.* = .{ .writer = writer };
@@ -260,7 +256,9 @@ pub fn PrettySink(comptime Writer: type) type {
         out: *Writer,
         /// Scratch space for a single record; flushed to `out` then reused.
         scratch: std.ArrayList(u8) = .empty,
-        /// Records the logger had to drop before they reached this sink.
+        /// Records this sink rejected on its own: framing, CRC or parse
+        /// failure. Records the logger could not hand over at all are counted
+        /// by the logger instead.
         dropped: std.atomic.Value(u64) = .init(0),
         profile: render.ColorProfile = .plain,
         options: render.RenderOptions = .{},
@@ -335,7 +333,9 @@ pub fn JsonSink(comptime Writer: type) type {
         allocator: std.mem.Allocator,
         /// Destination for rendered lines; supplied by the caller. Not owned.
         out: *Writer,
-        /// Records the logger had to drop before they reached this sink.
+        /// Records this sink rejected on its own: framing, CRC or parse
+        /// failure. Records the logger could not hand over at all are counted
+        /// by the logger instead.
         dropped: std.atomic.Value(u64) = .init(0),
         /// Reusable per-record render state (error fragment refs, scratch).
         ctx: jsonsink.Ctx,

@@ -237,7 +237,7 @@ Three consequences worth internalizing:
    `[]const u8`, works; a runtime-built string does not. Put dynamic text in
    `attrs` instead.
 2. **The call returns `void`.** There is no error channel and no `Enabled` check.
-   A record that cannot be built or written is **dropped** and the sink's
+   A record that cannot be built or written is **dropped** and the logger's
    `dropped` counter is incremented.
 3. `attrs` must be an anonymous struct. `.{ .key = value }`; `attrs` is never
    nullable, but `.{}` is the idiomatic "no attributes".
@@ -386,15 +386,11 @@ pub fn write(self: *Self, pool: *BufferPool, buf: []const u8) WriteError!usize
   a synchronous sink must `pool.put(@constCast(buf))`.
 - `pool` is always the concrete `writer.BufferPool`, never generic.
 - A failing sink returns `error.WriteFailed`; the logger counts that as a dropped
-  record.
-- A custom sink must additionally expose a `dropped` field of type
-  `std.atomic.Value(u64)`, because `logger.writeRecord` does
-  `sink.dropped.fetchAdd(1, .monotonic)` whenever it drops a record itself
-  (pool exhaustion, or any sink error). This is an implicit part of the
-  contract and a missing field is a compile error, not a silent default. The
-  same field is bumped by the renderer sinks (`PrettySink`/`JsonSink`) for
-  unreadable input frames, and the CLI reads it to report skipped records. Each
-  failed record increments the counter exactly once.
+  record on its own `dropped` counter.
+- A sink needs no `dropped` field to work with the logger: the drop accounting
+  lives on the logger. The built-in renderer sinks (`PrettySink`/`JsonSink`)
+  carry their own `dropped` field for the frames they reject themselves
+  (unreadable input), and the CLI reads it to report skipped records.
 
 ### Downstream writer contract (what a sink wraps)
 
@@ -417,7 +413,7 @@ var sink: blog.MemorySink = undefined;
 sink.init(allocator);
 defer sink.deinit();          // frees `sink.bytes`
 _ = sink.bytes.items;         // all frames concatenated
-_ = sink.dropped.load(.monotonic);
+_ = logger.dropped.load(.monotonic);
 ```
 
 ```zig
@@ -723,8 +719,8 @@ variants (and Go producers) fill it.
 
 ### The Zig logger never returns an error
 
-Records are dropped on pool failure or sink failure, and the sink's `dropped`
-counter is bumped. Check `sink.dropped.load(.monotonic)` if you care. The CLI
+Records are dropped on pool failure or sink failure, and the logger's `dropped`
+counter is bumped. Check `logger.dropped.load(.monotonic)` if you care. The CLI
 prints a warning to stderr when it is nonzero after a run.
 
 ### Diagnostics are log-once and slot-bound
@@ -748,10 +744,11 @@ A custom sink that forgets `pool.put` on its error path will trip the pool's
 leak assertion later, far from the bug. `defer _ =
 pool.put(@constCast(buf));` is the pattern every built-in sink uses.
 
-### A custom sink also needs `dropped`
+### A custom sink needs nothing but `write`
 
-`logger.writeRecord` calls `self.sink.dropped.fetchAdd(1, .monotonic)`, so a sink
-without that field is a compile error, not an optional extra.
+The drop accounting lives on the logger, so a custom sink only has to expose the
+`write` method (and release `buf`). A `dropped` field is optional and only
+meaningful when the sink rejects frames on its own.
 
 ### The thread-safe pool does not compose with the built-in sinks
 
@@ -838,8 +835,8 @@ pub fn main() !void {
 
     try loadConfig(&logger, "/etc/app.json");
 
-    if (sink.dropped.load(.monotonic) != 0) {
-        std.debug.print("dropped {d} record(s)\n", .{sink.dropped.load(.monotonic)});
+    if (logger.dropped.load(.monotonic) != 0) {
+        std.debug.print("dropped {d} record(s)\n", .{logger.dropped.load(.monotonic)});
     }
 
     // A diagnostic built by hand, inspected before it is logged.

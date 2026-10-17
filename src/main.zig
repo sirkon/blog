@@ -11,17 +11,54 @@ const blog = @import("blog");
 pub fn main(init: std.process.Init) !void {
     var pool: blog.BufferPool = undefined;
     try pool.init(init.arena.allocator(), 4096, 4096);
+
     var writer: blog.FdWriter = undefined;
     writer.init(1);
-    var sink: blog.PrettySink(blog.FdWriter) = undefined;
-    sink.init(init.arena.allocator(), blog.ColorProfile.dark, &writer);
-    var logger: blog.Logger(blog.BufferPool, blog.PrettySink(blog.FdWriter)) = undefined;
+
+    var pretty: blog.PrettySink(blog.FdWriter) = undefined;
+    pretty.init(init.arena.allocator(), blog.ColorProfile.dark, &writer);
+    defer pretty.deinit();
+
+    var json: blog.JsonSink(blog.FdWriter) = undefined;
+    json.init(init.arena.allocator(), &writer);
+    defer json.deinit();
+
+    var sink: CombinedSink = .{
+        .pretty = &pretty,
+        .json = &json,
+    };
+
+    var logger: blog.Logger(blog.BufferPool, CombinedSink) = undefined;
     logger.init(&pool, &sink);
+
     var diag = try logger.err_new("new error", .{ .key11 = 1, .key21 = "Hello!" });
     diag = try diag.wrap("wrap", .{ .key21 = 2, .key22 = "World" });
     diag = try diag.with(.{ .key31 = 3 });
     logger.warn("msg", .{ .diag = diag });
 }
+
+const CombinedSink = struct {
+    const Self = @This();
+
+    pretty: *blog.PrettySink(blog.FdWriter),
+    json: *blog.JsonSink(blog.FdWriter),
+
+    pub fn write(self: *Self, pool: *blog.BufferPool, buf: []const u8) blog.WriteError!usize {
+        // Each sink takes ownership of its slice and returns it to the pool, so
+        // the second one needs a copy of the record.
+        const copy = pool.get(buf.len) catch {
+            _ = pool.put(@constCast(buf));
+            return error.WriteFailed;
+        };
+        @memcpy(copy, buf);
+
+        _ = self.pretty.write(pool, buf) catch |err| {
+            _ = pool.put(copy);
+            return err;
+        };
+        return self.json.write(pool, copy);
+    }
+};
 
 test "test output" {
     const expected: []const u8 =

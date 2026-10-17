@@ -50,6 +50,10 @@ pub fn Logger(comptime Pool: type, comptime Sink: type) type {
 
         pool: *Pool,
         sink: *Sink,
+        /// Records this logger could not hand to the sink: pool exhaustion or
+        /// a sink that returned `error.WriteFailed`. A sink that rejects a
+        /// record internally counts it in its own `dropped`, if it has one.
+        dropped: std.atomic.Value(u64) = .init(0),
         /// Full allocation backing the `With` prefix, so `put` recovers it.
         prefix_alloc: ?[]u8 = null,
         /// Payload bytes contributed by `With` (a subview of `prefix_alloc`).
@@ -208,7 +212,7 @@ pub fn Logger(comptime Pool: type, comptime Sink: type) type {
         }
 
         /// Renders a full log record into a pooled buffer and hands it to the
-        /// sink. Failures drop the record and bump the sink's `dropped`
+        /// sink. Failures drop the record and bump this logger's `dropped`
         /// counter.
         inline fn writeRecord(
             self: *Self,
@@ -286,7 +290,7 @@ pub fn Logger(comptime Pool: type, comptime Sink: type) type {
         }
 
         inline fn drop(self: *Self) void {
-            _ = self.sink.dropped.fetchAdd(1, .monotonic);
+            _ = self.dropped.fetchAdd(1, .monotonic);
         }
     };
 }
@@ -443,7 +447,7 @@ test "drop accounting when the sink fails" {
     logger.info("three", .{});
 
     try expectEqual(@as(usize, 3), sink.calls);
-    try expectEqual(@as(u64, 3), sink.dropped.load(.monotonic));
+    try expectEqual(@as(u64, 3), logger.dropped.load(.monotonic));
 }
 
 test "drop accounting when the pool is out of memory" {
@@ -469,6 +473,6 @@ test "drop accounting when the pool is out of memory" {
     const big = "x" ** 4096;
     logger.warn(big, .{});
 
-    try expectEqual(@as(u64, 1), sink.dropped.load(.monotonic));
+    try expectEqual(@as(u64, 1), logger.dropped.load(.monotonic));
     try expectEqual(@as(usize, 0), sink.bytes.items.len);
 }
