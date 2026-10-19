@@ -9,13 +9,13 @@ a buffer.
 **System**
 
 | goos   | goarch | cpu          | pkg      |
-|--------|--------|--------------|----------|
+| ------ | ------ | ------------ | -------- |
 | darwin | arm64  | Apple M4 Pro | benching |
 
 **Results**
 
 | Benchmark                           | Iterations | ns/op       | B/op     | allocs/op    |
-|-------------------------------------|------------|-------------|----------|--------------|
+| ----------------------------------- | ---------- | ----------- | -------- | ------------ |
 | BenchmarkBinLog/short               | 26555036   | 45.08 ns/op | 0 B/op   | 0 allocs/op  |
 | BenchmarkBinLog/mid                 | 24984579   | 46.58 ns/op | 0 B/op   | 0 allocs/op  |
 | BenchmarkBinLog/longer              | 23299273   | 51.65 ns/op | 0 B/op   | 0 allocs/op  |
@@ -37,25 +37,40 @@ a buffer.
 
 or, side-by-side
 
-| Test             | BinLog      | ZeroLog     | Ratio (2nd/1st) |
-|------------------|-------------|-------------|-----------------|
-| short            | 45.30 ns/op | 59.09 ns/op | 1.30x           |
-| mid              | 46.62 ns/op | 62.00 ns/op | 1.33x           |
-| longer           | 51.32 ns/op | 64.94 ns/op | 1.27x           |
-| long             | 63.81 ns/op | 68.96 ns/op | 1.08x           |
-| escape           | 44.56 ns/op | 59.66 ns/op | 1.34x           |
-| WorstCaseForBlog | 137.9 ns/op | 113.4 ns/op | 0.82x           |
-| RealLog          | 61.05 ns/op | 72.30 ns/op | 1.18x           |
-| RealErrorLog     | 218.1 ns/op | 602.4 ns/op | 2.76x           |
-| Ctx3             | 385.4 ns/op | 401.0 ns/op | 1.04x           |
+| Test             | BinLog      | ZeroLog     | Ratio (2nd/1st) | Zig       |
+| ---------------- | ----------- | ----------- | --------------- | --------- |
+| short            | 45.30 ns/op | 59.09 ns/op | 1.30x           | 25 ns/op  |
+| mid              | 46.62 ns/op | 62.00 ns/op | 1.33x           | 30 ns/op  |
+| longer           | 51.32 ns/op | 64.94 ns/op | 1.27x           | 36 ns/op  |
+| long             | 63.81 ns/op | 68.96 ns/op | 1.08x           | 45 ns/op  |
+| escape           | 44.56 ns/op | 59.66 ns/op | 1.34x           | 27 ns/op  |
+| WorstCaseForBlog | 137.9 ns/op | 113.4 ns/op | 0.82x           | 31 ns/op  |
+| RealLog          | 61.05 ns/op | 72.30 ns/op | 1.18x           | 28 ns/op  |
+| RealErrorLog     | 218.1 ns/op | 602.4 ns/op | 2.76x           | 53 ns/op  |
+| Ctx3             | 385.4 ns/op | 401.0 ns/op | 1.04x           | 173 ns/op |
 
 Factors that inherently slows things down for blog:
 
 - CRC32 computation. It is 5-15 ns tax depending on the length of the payload. May be more for larger events.
-  Still worth it: when a couple of bits rotted within an event we lose a log record with blog. 
+  Still worth it: when a couple of bits rotted within an event we lose a log record with blog.
   And we may lose the entire rest of log with CBOR.
-- FluentAPI on ZeroLog wins with large contexts (WorstCase thing). 
+- FluentAPI on ZeroLog wins with large contexts (WorstCase thing).
   This is an IR tax to pay for variadic style API I intentionally follow for "stick to business" semantics.
+- I added Zig benchmark (`zig build bench -Doptimize=ReleaseFast` in this repo). The irony is its usage semantics
+  is higher level than one of Go version, but its execution profile has lower ABI pressure than FluentAPI of
+  ZeroLog. All thanks to comptime. BTW, what I meant under "higher level", see for yourself:
+
+  ```go
+  logger.Warn(nil, "blah-blah-blah", blog.Str("name", name), blog.Flt64("pi", math.Pi))
+  ```
+
+  vs
+
+  ```zig
+  logger.warn("blah-blah-blah", .{ .name = name, .pi = math.pi });
+  ```
+
+  These two produces identical binary data at that.
 
 Why does blog faster on smaller things?
 
@@ -73,13 +88,13 @@ so we both need to copy. Longer contexts hits blog since they cause variadic sli
 **System**
 
 | goos  | goarch | cpu                                  | pkg      |
-|-------|--------|--------------------------------------|----------|
+| ----- | ------ | ------------------------------------ | -------- |
 | linux | amd64  | 12th Gen Intel(R) Core(TM) i7-12700K | benching |
 
 **Comparison: BinLog vs ZeroLog**
 
 | Test             | BinLog      | ZeroLog     | Ratio (2nd/1st) |
-|------------------|-------------|-------------|-----------------|
+| ---------------- | ----------- | ----------- | --------------- |
 | short            | 52.57 ns/op | 66.86 ns/op | 1.27x           |
 | mid              | 57.28 ns/op | 69.04 ns/op | 1.21x           |
 | longer           | 64.12 ns/op | 69.55 ns/op | 1.08x           |
@@ -90,19 +105,18 @@ so we both need to copy. Longer contexts hits blog since they cause variadic sli
 | RealErrorLog     | 279.7 ns/op | 1022 ns/op  | 3.65x           |
 | Ctx3             | 463.0 ns/op | 496.2 ns/op | 1.07x           |
 
-
 ## Against zerolog with JSON.
 
 **System**
 
 | goos   | goarch | cpu          | pkg      |
-|--------|--------|--------------|----------|
+| ------ | ------ | ------------ | -------- |
 | darwin | arm64  | Apple M4 Pro | benching |
 
 **Comparison: BinLog vs ZeroLog**
 
 | Test             | BinLog      | ZeroLog     | Ratio (2nd/1st) |
-|------------------|-------------|-------------|-----------------|
+| ---------------- | ----------- | ----------- | --------------- |
 | short            | 44.16 ns/op | 81.29 ns/op | 1.84x           |
 | mid              | 45.58 ns/op | 92.15 ns/op | 2.02x           |
 | longer           | 51.04 ns/op | 113.3 ns/op | 2.22x           |
@@ -118,13 +132,13 @@ and here are the Intel results:
 **System**
 
 | goos  | goarch | cpu                                  | pkg      |
-|-------|--------|--------------------------------------|----------|
+| ----- | ------ | ------------------------------------ | -------- |
 | linux | amd64  | 12th Gen Intel(R) Core(TM) i7-12700K | benching |
 
 **Comparison: BinLog vs ZeroLog**
 
 | Test             | BinLog      | ZeroLog     | Ratio (2nd/1st) |
-|------------------|-------------|-------------|-----------------|
+| ---------------- | ----------- | ----------- | --------------- |
 | short            | 53.04 ns/op | 102.8 ns/op | 1.94x           |
 | mid              | 57.23 ns/op | 118.1 ns/op | 2.06x           |
 | longer           | 64.43 ns/op | 130.7 ns/op | 2.03x           |

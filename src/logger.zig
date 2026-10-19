@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const consts = @import("consts.zig");
 const encoding = @import("encoding.zig");
 const crc32c = @import("crc32c.zig");
@@ -15,10 +16,27 @@ pub fn headerWidth(payload_len: usize) usize {
     return 6 + (bits_len + 6) / 7;
 }
 
-/// Monotonic-free logl clock read via a raw `clock_gettime` syscall.
-/// CLOCK_REALTIME is always 0 in the Linux ABI.
+/// Clock read used for every record timestamp. CLOCK_REALTIME is always 0
+/// in the Linux ABI.
+///
+/// With libc linked the call goes through the C library, which serves it
+/// from the vDSO (a few nanoseconds). Calling `std.os.linux.clock_gettime`
+/// instead would fall back to a real syscall on every record: its vDSO
+/// lookup goes through `getauxval`, which resolves to glibc's version, and
+/// Zig's own `_start` never runs `__libc_start_main`, so glibc's auxv copy
+/// stays empty and the lookup fails permanently. Without libc, Zig's start
+/// code populates `elf_aux_maybe` and the std path does reach the vDSO, so
+/// it stays as the fallback.
 fn loglClockNs() u64 {
     var ts: std.os.linux.timespec = undefined;
+
+    if (builtin.link_libc) {
+        if (std.c.clock_gettime(.REALTIME, &ts) == 0) {
+            @branchHint(.likely);
+            return toUnixNs(ts);
+        }
+        return 0;
+    }
 
     const res = std.os.linux.clock_gettime(.REALTIME, &ts);
 

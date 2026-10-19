@@ -128,6 +128,23 @@ pub fn build(b: *std.Build) void {
     // command itself, like this: `zig build run -- arg1 arg2 etc`
     run_cmd.addPassthruArgs();
 
+    const bench_exe = b.addExecutable(.{
+        .name = "bench",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/bench.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "blog", .module = mod },
+            },
+        }),
+    });
+
+    // Installs the benchmark executable into `zig-out/bin/bench` instead of
+    // running it, so it can be invoked repeatedly without rebuilding.
+    const bench_step = b.step("bench", "Build the logger benchmarks executable");
+    bench_step.dependOn(&b.addInstallArtifact(bench_exe, .{}).step);
+
     // Creates an executable that will run `test` blocks from the provided module.
     // Here `mod` needs to define a target, which is why earlier we made sure to
     // set the releative field.

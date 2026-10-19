@@ -5,7 +5,6 @@
 //! JSON context), mirroring the Rust reference viewer and the Go `zighelper`.
 
 const std = @import("std");
-const Io = std.Io;
 const blog = @import("blog");
 
 pub fn main(init: std.process.Init) !void {
