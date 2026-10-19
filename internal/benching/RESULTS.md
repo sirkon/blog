@@ -37,17 +37,17 @@ a buffer.
 
 or, side-by-side
 
-| Test             | BinLog      | ZeroLog     | Ratio (2nd/1st) | Zig       |
-| ---------------- | ----------- | ----------- | --------------- | --------- |
-| short            | 45.30 ns/op | 59.09 ns/op | 1.30x           | 25 ns/op  |
-| mid              | 46.62 ns/op | 62.00 ns/op | 1.33x           | 30 ns/op  |
-| longer           | 51.32 ns/op | 64.94 ns/op | 1.27x           | 36 ns/op  |
-| long             | 63.81 ns/op | 68.96 ns/op | 1.08x           | 45 ns/op  |
-| escape           | 44.56 ns/op | 59.66 ns/op | 1.34x           | 27 ns/op  |
-| WorstCaseForBlog | 137.9 ns/op | 113.4 ns/op | 0.82x           | 31 ns/op  |
-| RealLog          | 61.05 ns/op | 72.30 ns/op | 1.18x           | 28 ns/op  |
-| RealErrorLog     | 218.1 ns/op | 602.4 ns/op | 2.76x           | 53 ns/op  |
-| Ctx3             | 385.4 ns/op | 401.0 ns/op | 1.04x           | 173 ns/op |
+| Test             | BinLog      | ZeroLog     | Ratio (2nd/1st) |
+| ---------------- | ----------- | ----------- | --------------- |
+| short            | 45.30 ns/op | 59.09 ns/op | 1.30x           |
+| mid              | 46.62 ns/op | 62.00 ns/op | 1.33x           |
+| longer           | 51.32 ns/op | 64.94 ns/op | 1.27x           |
+| long             | 63.81 ns/op | 68.96 ns/op | 1.08x           |
+| escape           | 44.56 ns/op | 59.66 ns/op | 1.34x           |
+| WorstCaseForBlog | 137.9 ns/op | 113.4 ns/op | 0.82x           |
+| RealLog          | 61.05 ns/op | 72.30 ns/op | 1.18x           |
+| RealErrorLog     | 218.1 ns/op | 602.4 ns/op | 2.76x           |
+| Ctx3             | 385.4 ns/op | 401.0 ns/op | 1.04x           |
 
 Factors that inherently slows things down for blog:
 
@@ -56,21 +56,6 @@ Factors that inherently slows things down for blog:
   And we may lose the entire rest of log with CBOR.
 - FluentAPI on ZeroLog wins with large contexts (WorstCase thing).
   This is an IR tax to pay for variadic style API I intentionally follow for "stick to business" semantics.
-- I added Zig benchmark (`zig build bench -Doptimize=ReleaseFast` in this repo). The irony is its usage semantics
-  is higher level than one of Go version, but its execution profile has lower ABI pressure than FluentAPI of
-  ZeroLog. All thanks to comptime. BTW, what I meant under "higher level", see for yourself:
-
-  ```go
-  logger.Warn(nil, "blah-blah-blah", blog.Str("name", name), blog.Flt64("pi", math.Pi))
-  ```
-
-  vs
-
-  ```zig
-  logger.warn("blah-blah-blah", .{ .name = name, .pi = math.pi });
-  ```
-
-  These two produces identical binary data at that.
 
 Why does blog faster on smaller things?
 
@@ -93,17 +78,33 @@ so we both need to copy. Longer contexts hits blog since they cause variadic sli
 
 **Comparison: BinLog vs ZeroLog**
 
-| Test             | BinLog      | ZeroLog     | Ratio (2nd/1st) |
-| ---------------- | ----------- | ----------- | --------------- |
-| short            | 52.57 ns/op | 66.86 ns/op | 1.27x           |
-| mid              | 57.28 ns/op | 69.04 ns/op | 1.21x           |
-| longer           | 64.12 ns/op | 69.55 ns/op | 1.08x           |
-| long             | 74.72 ns/op | 71.48 ns/op | 0.96x           |
-| escape           | 53.58 ns/op | 68.19 ns/op | 1.27x           |
-| WorstCaseForBlog | 169.5 ns/op | 137.1 ns/op | 0.81x           |
-| RealLog          | 79.55 ns/op | 85.61 ns/op | 1.08x           |
-| RealErrorLog     | 279.7 ns/op | 1022 ns/op  | 3.65x           |
-| Ctx3             | 463.0 ns/op | 496.2 ns/op | 1.07x           |
+| Test             | BinLog      | ZeroLog     | Ratio (2nd/1st) | Zig       |
+| ---------------- | ----------- | ----------- | --------------- | --------- |
+| short            | 52.57 ns/op | 66.86 ns/op | 1.27x           | 25 ns/op  |
+| mid              | 57.28 ns/op | 69.04 ns/op | 1.21x           | 30 ns/op  |
+| longer           | 64.12 ns/op | 69.55 ns/op | 1.08x           | 36 ns/op  |
+| long             | 74.72 ns/op | 71.48 ns/op | 0.96x           | 45 ns/op  |
+| escape           | 53.58 ns/op | 68.19 ns/op | 1.27x           | 27 ns/op  |
+| WorstCaseForBlog | 169.5 ns/op | 137.1 ns/op | 0.81x           | 31 ns/op  |
+| RealLog          | 79.55 ns/op | 85.61 ns/op | 1.08x           | 28 ns/op  |
+| RealErrorLog     | 279.7 ns/op | 1022 ns/op  | 3.65x           | 53 ns/op  |
+| Ctx3             | 463.0 ns/op | 496.2 ns/op | 1.07x           | 173 ns/op |
+
+Here I added Zig benchmark (`zig build bench -Doptimize=ReleaseFast` in this repo). The irony is its usage semantics
+is higher level than one of Go version, but its execution profile has lower ABI pressure than FluentAPI of
+ZeroLog. All thanks to comptime. BTW, what I meant under "higher level", see for yourself:
+
+```go
+logger.Warn(nil, "blah-blah-blah", blog.Str("name", name), blog.Flt64("pi", math.Pi))
+```
+
+vs
+
+```zig
+logger.warn("blah-blah-blah", .{ .name = name, .pi = math.pi });
+```
+
+These two produces identical binary data at that.
 
 ## Against zerolog with JSON.
 
