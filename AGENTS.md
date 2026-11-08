@@ -27,6 +27,7 @@ favor of `@splat`, and reflection field iteration moved from
 | Go vet | `go vet ./...` |
 | Zig build (CLI -> `zig-out/bin/blog`) | `zig build` |
 | Zig tests | `zig build test` |
+| Zig crc32c tests + benchmarks (`ReleaseFast`) | `zig build crc-bench` |
 | Run Zig CLI | `zig build run` |
 | Benchmarks vs zerolog | `cd internal/benching && go test -bench .` |
 
@@ -69,8 +70,24 @@ CRC is **CRC32C / Castagnoli**, identical in both implementations
 (`hash/crc32.Castagnoli` in Go, `src/crc32c.zig` in Zig). The Zig CRC has an
 inline-asm path for x86_64 that is enabled **only in `ReleaseFast`** (a
 compiler workaround) and a `crc32cx` path on aarch64; every other target falls
-back to `std.hash.crc.Crc32Iscsi`. Keep the fallback working, it is what tests
+back to a byte table of our own. Keep the fallback working, it is what tests
 run under.
+
+`hardwareCrc32C(data)` and `composedCrc32C(acc, data)` share one raw-register
+core: the CRC of a block is the final state of its shift register, so
+`composedCrc32C` only undoes and reapplies the output inversion around
+`hardwareCrc32C`'s register update. That makes `composedCrc32C(acc, b)` equal to
+`hardwareCrc32C(a ++ b)` for `acc = hardwareCrc32C(a)`, with `acc == 0` standing
+for an empty `a`. The x86_64 path runs three interleaved `crc32q` streams
+(whose 3-cycle latency would otherwise serialize the whole block) and merges
+them with GF(2) "advance by N zero bytes" tables; the span is greedily picked
+from `span_menu` (largest block first), so both tiny records and multi-kilobyte
+payloads stay close to the instruction's throughput limit.
+
+`zig build test` runs the correctness tests only (the benchmark test skips
+outside `ReleaseFast`). `zig build crc-bench` pins the artifact to `ReleaseFast`
+and runs the crc32c tests together with the benchmarks, which compare us against
+`std.hash.crc.@"CRC-32/ISCSI"` and fail if we are more than 5% slower.
 
 `ValueKind` numbers are frozen. Go guards each value with a compile-time array
 index assert in `internal/core/attr_value_kind.go`; Zig mirrors them in

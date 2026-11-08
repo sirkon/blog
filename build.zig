@@ -145,6 +145,27 @@ pub fn build(b: *std.Build) void {
     const bench_step = b.step("bench", "Build the logger benchmarks executable");
     bench_step.dependOn(&b.addInstallArtifact(bench_exe, .{}).step);
 
+    // Runs the crc32c tests, benchmarks included. They only measure anything in
+    // ReleaseFast, so this artifact is pinned to that mode rather than
+    // following `-Doptimize`; every other mode skips the benchmark test.
+    const crc_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/root.zig"),
+            .target = target,
+            .optimize = .ReleaseFast,
+            .link_libc = true,
+            .imports = &.{
+                .{ .name = "jsonescape", .module = jsonescape_mod },
+            },
+        }),
+        .filters = &.{"crc32c"},
+    });
+
+    const run_crc_tests = b.addRunArtifact(crc_tests);
+
+    const crc_bench_step = b.step("crc-bench", "Run the crc32c correctness tests and benchmarks (ReleaseFast)");
+    crc_bench_step.dependOn(&run_crc_tests.step);
+
     // Creates an executable that will run `test` blocks from the provided module.
     // Here `mod` needs to define a target, which is why earlier we made sure to
     // set the releative field.
