@@ -64,6 +64,9 @@ pub const ParsedRecord = viewer.ParsedRecord;
 
 /// Wire vocabulary shared by the logger and the viewer.
 pub const consts = @import("consts.zig");
+/// Encodes an integer at `dst` as uvarint (unsigned) or zigzag uvarint
+/// (signed) and returns the pointer just past the bytes written.
+pub const appendVarint = @import("encoding.zig").appendVarint;
 /// CRC32C used to verify log frames.
 pub const crc32c = @import("crc32c.zig");
 
